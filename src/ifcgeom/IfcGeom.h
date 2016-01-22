@@ -163,6 +163,10 @@ public:
 
 	bool split_solid_by_surface(const TopoDS_Shape&, const Handle_Geom_Surface&, TopoDS_Shape&, TopoDS_Shape&);
 	bool split_solid_by_shell(const TopoDS_Shape&, const TopoDS_Shape& s, TopoDS_Shape&, TopoDS_Shape&);
+	
+	// TODO: Merge these into one function, possibly with a set of indices which define which surfaces need to be intersected
+	bool create_shell_from_intersecting_surfaces(const std::vector<Handle_Geom_Surface>&, const TopoDS_Shape& bounds, TopoDS_Shell&);
+	bool create_shell_from_intersecting_surfaces_for_halfspace(const std::vector<Handle_Geom_Surface>&, const TopoDS_Shape& bounds, TopoDS_Shell&);
 
 	const Handle_Geom_Curve intersect(const Handle_Geom_Surface&, const Handle_Geom_Surface&);
 	const Handle_Geom_Curve intersect(const Handle_Geom_Surface&, const TopoDS_Face&);

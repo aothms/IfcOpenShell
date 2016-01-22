@@ -88,6 +88,7 @@
 #include <ShapeFix_ShapeTolerance.hxx>
 #include <ShapeFix_Solid.hxx>
 
+#include <ShapeAnalysis_ShapeTolerance.hxx>
 #include <ShapeAnalysis_Curve.hxx>
 #include <ShapeAnalysis_Surface.hxx>
 
@@ -119,6 +120,8 @@
 #include <BOPAlgo_BOP.hxx>
 
 #include <GCPnts_AbscissaPoint.hxx>
+
+#include <BOPTools_AlgoTools2D.hxx>
 
 #include "../ifcparse/IfcSIPrefix.h"
 #include "../ifcparse/IfcFile.h"
@@ -1687,52 +1690,10 @@ bool IfcGeom::Kernel::apply_folded_layerset(const IfcRepresentationShapeItems& i
 			}
 			shells.push_back(BRepBuilderAPI_MakeShell(surface, u1, v1, u2, v2).Shell());
 		} else {
-			faces_with_mass_t solids;		
-			for (folded_surfaces_t::value_type::const_iterator jt = it->begin(); jt != it->end(); ++jt) {
-				const Handle_Geom_Surface& surface = *jt;
-				double u1, v1, u2, v2;
-				if (!project(surface, input, u1, v1, u2, v2)) {
-					continue;
-				}
-				TopoDS_Face face = BRepBuilderAPI_MakeFace(surface, u1, u2, v1, v2, 1.e-7).Face();
-				gp_Pnt p, p1, p2; gp_Vec vu, vv, n;
-				surface->D1((u1+u2)/2., (v1+v2)/2., p, vu, vv);
-				n = vu ^ vv;
-				p1 = p.Translated( n);
-				p2 = p.Translated(-n);
-				solids.push_back(std::make_pair(face, std::make_pair(p1, p2)));
+			TopoDS_Shell shell;
+			if (create_shell_from_intersecting_surfaces(*it, input, shell)) {
+				shells.push_back(shell);
 			}
-			
-
-			if (solids.empty()) {
-				continue;
-			}
-
-			faces_with_mass_t::iterator jt = solids.begin();
-			TopoDS_Face& A = jt->first;
-			TopoDS_Shape An = BRepPrimAPI_MakeHalfSpace(A, jt->second.second).Solid();
-			for (++jt; jt != solids.end(); ++jt) {
-				TopoDS_Face& B = jt->first;
-				TopoDS_Shape Bn = BRepPrimAPI_MakeHalfSpace(B, jt->second.second).Solid();
-
-				TopoDS_Shape a = BRepAlgoAPI_Cut(A, Bn);
-				if (count(a, TopAbs_FACE) == 1) {
-					A = TopoDS::Face(TopExp_Explorer(a, TopAbs_FACE).Current());
-				}
-
-				TopoDS_Shape b = BRepAlgoAPI_Cut(B, An);
-				if (count(b, TopAbs_FACE) == 1) {
-					B = TopoDS::Face(TopExp_Explorer(b, TopAbs_FACE).Current());
-				}
-			}
-
-			BRepOffsetAPI_Sewing builder;
-			for (faces_with_mass_t::const_iterator it = solids.begin(); it != solids.end(); ++it) {
-				builder.Add(it->first);
-			}
-		
-			builder.Perform();
-			shells.push_back(TopoDS::Shell(builder.SewedShape()));
 		}
 	}
 
@@ -1922,7 +1883,7 @@ bool IfcGeom::Kernel::split_solid_by_surface(const TopoDS_Shape& input, const Ha
 	return b;
 }
 
-bool IfcGeom::Kernel::split_solid_by_shell(const TopoDS_Shape& input, const TopoDS_Shape& shell, TopoDS_Shape& front, TopoDS_Shape& back) {
+bool IfcGeom::Kernel::split_solid_by_shell(const TopoDS_Shape& input_, const TopoDS_Shape& shell, TopoDS_Shape& front, TopoDS_Shape& back) {
 	// Use a shell, typically one or more connected faces, that isolate part
 	// of the input shape, to split this shape into two parts. Make sure that
 	// the addition of the two result volumes matches that of the input.
@@ -1935,6 +1896,12 @@ bool IfcGeom::Kernel::split_solid_by_shell(const TopoDS_Shape& input, const Topo
 	} else {
 		return false;
 	}
+
+	TopoDS_Shape input = input_;
+
+	double precision = getValue(GV_PRECISION);
+	apply_tolerance(input, precision);
+	apply_tolerance(solid, precision);
 
 	BOPCol_ListOfShape shapes;
 	shapes.Append(input);
@@ -2015,6 +1982,198 @@ bool IfcGeom::Kernel::project(const Handle_Geom_Surface& srf, const TopoDS_Shape
 	u2 += widen;
 	v1 -= widen;
 	v2 += widen;
+	
+	return true;
+}
+
+bool IfcGeom::Kernel::create_shell_from_intersecting_surfaces(const std::vector<Handle_Geom_Surface>& surfaces, const TopoDS_Shape& bounds, TopoDS_Shell& result) {
+	typedef std::pair< TopoDS_Face, std::pair<gp_Pnt, gp_Pnt> > face_with_mass_t;
+	
+	std::vector<face_with_mass_t> solids;
+	
+	for (std::vector<Handle_Geom_Surface>::const_iterator it = surfaces.begin(); it != surfaces.end(); ++it) {
+		const Handle_Geom_Surface& surface = *it;
+		double u1, v1, u2, v2;
+		if (!project(surface, bounds, u1, v1, u2, v2)) {
+			continue;
+		}
+		TopoDS_Face face = BRepBuilderAPI_MakeFace(surface, u1, u2, v1, v2, 1.e-7).Face();
+		gp_Pnt p, p1, p2; gp_Vec vu, vv, n;
+		surface->D1((u1+u2)/2., (v1+v2)/2., p, vu, vv);
+		n = vu ^ vv;
+		p1 = p.Translated( n);
+		p2 = p.Translated(-n);
+		solids.push_back(std::make_pair(face, std::make_pair(p1, p2)));
+	}			
+
+	if (solids.empty()) {
+		return false;
+	}
+
+	std::vector<face_with_mass_t>::iterator jt = solids.begin();
+	TopoDS_Face& A = jt->first;
+	TopoDS_Shape An = BRepPrimAPI_MakeHalfSpace(A, jt->second.second).Solid();
+	for (++jt; jt != solids.end(); ++jt) {
+		TopoDS_Face& B = jt->first;
+		TopoDS_Shape Bn = BRepPrimAPI_MakeHalfSpace(B, jt->second.second).Solid();
+
+		TopoDS_Shape a = BRepAlgoAPI_Cut(A, Bn);
+		if (count(a, TopAbs_FACE) == 1) {
+			A = TopoDS::Face(TopExp_Explorer(a, TopAbs_FACE).Current());
+		}
+
+		TopoDS_Shape b = BRepAlgoAPI_Cut(B, An);
+		if (count(b, TopAbs_FACE) == 1) {
+			B = TopoDS::Face(TopExp_Explorer(b, TopAbs_FACE).Current());
+		}
+	}
+
+	BRepOffsetAPI_Sewing builder;
+	for (std::vector<face_with_mass_t>::const_iterator it = solids.begin(); it != solids.end(); ++it) {
+		builder.Add(it->first);
+	}
+		
+	builder.Perform();
+	TopoDS_Shape shape = builder.SewedShape();
+	result = TopoDS::Shell(shape);
+	
+	return true;
+}
+
+
+bool IfcGeom::Kernel::create_shell_from_intersecting_surfaces_for_halfspace(const std::vector<Handle_Geom_Surface>& surfaces, const TopoDS_Shape& bounds, TopoDS_Shell& result) {
+	typedef std::pair< TopoDS_Face, std::pair<gp_Pnt, gp_Pnt> > face_with_mass_t;
+	
+	std::vector<face_with_mass_t> solids;
+
+	for (std::vector<Handle_Geom_Surface>::const_iterator it = surfaces.begin(); it != surfaces.end(); ++it) {
+		const Handle_Geom_Surface& surface = *it;
+		double u1, v1, u2, v2;
+		if (!project(surface, bounds, u1, v1, u2, v2)) {
+			continue;
+		}
+		TopoDS_Face face = BRepBuilderAPI_MakeFace(surface, u1, u2, v1, v2, 1.e-7).Face();
+		gp_Pnt p, p1, p2; gp_Vec vu, vv, n;
+		surface->D1((u1+u2)/2., (v1+v2)/2., p, vu, vv);
+		n = vu ^ vv;
+		p1 = p.Translated( n);
+		p2 = p.Translated(-n);
+		solids.push_back(std::make_pair(face, std::make_pair(p1, p2)));
+	}
+
+	if (solids.empty()) {
+		return false;
+	}
+
+	gp_Dir d0 = Handle_Geom_Plane::DownCast(*surfaces.begin())->Pln().Position().Direction();
+
+	std::vector<face_with_mass_t>::iterator it, jt;
+	for (it = solids.begin(); it != solids.end(); ++it) {
+		for (jt = solids.begin(); jt != solids.end(); ++jt) {
+			if (it != jt) {
+				size_t i = std::distance(solids.begin(), it);
+				size_t j = std::distance(solids.begin(), jt);
+
+				bool adjacent = false;
+				if (i > 0 && j > 0) {
+					// What is checked is the adjacency in the original polygonal
+					// boundary. The first surface is the actual halfspace plane.
+					size_t n = solids.size() - 1;
+					adjacent = ((i - 2) % n) == (j - 1) || (i % n) == (j - 1);
+				}
+
+				if (j == 0 || adjacent) {
+
+					TopoDS_Face& A = it->first;
+					Handle_Geom_Surface As = BRep_Tool::Surface(A);
+					Handle_Geom_Surface Bs = BRep_Tool::Surface(jt->first);
+					
+					bool reverse = false;
+					if (i > 0 && j > 0) {
+						gp_Dir An = Handle_Geom_Plane::DownCast(As)->Pln().Position().Direction();
+						gp_Dir Bn = Handle_Geom_Plane::DownCast(Bs)->Pln().Position().Direction();
+						
+						bool r = (i > j && (j != 1 || i == 2)) || (j == solids.size() - 1 && i == 1);
+						if (r) {
+							std::swap(An, Bn);
+						}
+
+						double d = An.AngleWithRef(Bn, d0);
+						if (d < 0) {
+							d += 2 * M_PI;
+						}
+
+						if (d > M_PI) {
+							reverse = true;
+						}
+					}
+
+					double u1, v1, u2, v2;
+					if (!project(Bs, A, u1, v1, u2, v2)) {
+						continue;
+					}
+					TopoDS_Face Bf = BRepBuilderAPI_MakeFace(Bs, u1, u2, v1, v2, 1.e-7).Face();
+					gp_Pnt p, p1, p2; gp_Vec vu, vv, n;
+					Bs->D1((u1+u2)/2., (v1+v2)/2., p, vu, vv);
+					n = vu ^ vv;
+					if (reverse) {
+						p2 = p.Translated(-n);
+					} else {
+						p2 = p.Translated( n);
+					}
+					TopoDS_Shape Bn = BRepPrimAPI_MakeHalfSpace(Bf, p2).Solid();
+					TopoDS_Shape a = BRepAlgoAPI_Cut(A, Bn);
+					int c = count(a, TopAbs_FACE);
+					if (c == 1) {
+						A = TopoDS::Face(TopExp_Explorer(a, TopAbs_FACE).Current());
+					}
+
+				}
+			}
+		}
+	}
+	
+	ShapeAnalysis_Surface sas(*surfaces.begin());
+				
+	BRepBuilderAPI_MakeWire mw;
+	BRepOffsetAPI_Sewing builder;
+	for (std::vector<face_with_mass_t>::const_iterator it = solids.begin() + 1; it != solids.end(); ++it) {
+		builder.Add(it->first);
+		TopExp_Explorer exp(it->first, TopAbs_EDGE);
+		while (exp.More()) {
+			const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
+			TopExp_Explorer exp2(edge, TopAbs_VERTEX);
+			bool on_surf = true;
+			while (exp2.More()) {
+				gp_Pnt pt = BRep_Tool::Pnt(TopoDS::Vertex(exp2.Current()));
+				gp_Pnt ppt = sas.Value(sas.ValueOfUV(pt, 1e-5));
+				if (ppt.Distance(pt) > 1e-5) {
+					on_surf = false;
+					break;
+				}
+				exp2.Next();
+			}
+			if (on_surf) {
+				mw.Add(edge);
+				break;
+			}
+			exp.Next();
+		}
+	}
+	builder.Add(BRepBuilderAPI_MakeFace(*surfaces.begin(), mw.Wire()).Face());
+		
+	builder.Perform();
+	TopoDS_Shape shape = builder.SewedShape();
+
+	{
+		std::ofstream fs("shell.brep");
+		BRepTools::Write(shape, fs);
+	}
+
+	if (shape.ShapeType() != TopAbs_SHELL) {
+		return false;
+	}
+	result = TopoDS::Shell(shape);
 	
 	return true;
 }

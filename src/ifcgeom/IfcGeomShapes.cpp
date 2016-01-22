@@ -50,7 +50,10 @@
 #include <Geom_Circle.hxx>
 #include <Geom_Ellipse.hxx>
 #include <Geom_TrimmedCurve.hxx>
+
+#include <Geom_Plane.hxx>
 #include <Geom_CylindricalSurface.hxx>
+#include <Geom_SurfaceOfLinearExtrusion.hxx>
 
 #include <BRepOffsetAPI_Sewing.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
@@ -94,7 +97,12 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 
+#include <GeomAdaptor_HCurve.hxx>
+#include <Adaptor3d_SurfaceOfLinearExtrusion.hxx>
+
 #include <Standard_Version.hxx>
+
+#include <BRepTools.hxx>
 
 #include "../ifcgeom/IfcGeom.h"
 
@@ -295,32 +303,235 @@ bool IfcGeom::Kernel::convert(const IfcSchema::IfcBooleanResult* l, TopoDS_Shape
 	}
 
 	const double first_operand_volume = shape_volume(s1);
-	if ( first_operand_volume <= ALMOST_ZERO )
+	if ( first_operand_volume <= ALMOST_ZERO ) {
 		Logger::Message(Logger::LOG_WARNING,"Empty solid for:",l->FirstOperand()->entity);
+	}
 
-	bool shape2_processed = false;
-	if ( shape_type(operand2) == ST_SHAPELIST ) {
-		shape2_processed = convert_shapes(operand2, items2) && flatten_shape_list(items2, s2, true);
-	} else if ( shape_type(operand2) == ST_SHAPE ) {
-		shape2_processed = convert_shape(operand2,s2);
-		if (shape2_processed && !is_halfspace) {
-			TopoDS_Solid temp_solid;
-			s2 = ensure_fit_for_subtraction(s2, temp_solid);
+	// A lengthy procedure is in-lined here, that special cases the subtraction with a halfspace
+	// solid. This is necessary as, halfspaces are infinite solids, which are not handled elegantly
+	// in OpenCascade. By having knowledge of the volume of operand1, the halfspace solid can be
+	// bounded based on this volume.
+	if (operand2->is(IfcSchema::Type::IfcHalfSpaceSolid)) {
+
+		IfcSchema::IfcHalfSpaceSolid* hfs = operand2->as<IfcSchema::IfcHalfSpaceSolid>();
+		IfcSchema::IfcSurface* surface = hfs->BaseSurface();
+		if (!surface->is(IfcSchema::Type::IfcPlane)) {
+			Logger::Message(Logger::LOG_ERROR, "Unsupported BaseSurface:", surface->entity);
+			return false;
+		}
+		gp_Pln hs_pln;
+		IfcGeom::Kernel::convert((IfcSchema::IfcPlane*)surface, hs_pln);
+		if (!hfs->AgreementFlag()) {
+			gp_Ax3 ax3 = hs_pln.Position();
+			ax3.SetAxis(ax3.Axis().Reversed());
+			hs_pln = gp_Pln(ax3);
+		}
+		Handle_Geom_Plane halfspace_plane = new Geom_Plane(hs_pln);
+
+		// In case the polygonal boundary completely coincides with the faces in <s1>, an unbounded
+		// subtraction can be performed, which alleviates many of the precision problems.
+		bool degenerate_boundary = false;
+		
+		if (operand2->is(IfcSchema::Type::IfcPolygonalBoundedHalfSpace)) {
+			IfcSchema::IfcPolygonalBoundedHalfSpace* bphfs = operand2->as<IfcSchema::IfcPolygonalBoundedHalfSpace>();
+			
+			gp_Trsf trsf;
+			TopoDS_Wire wire;
+			if (!convert_wire(bphfs->PolygonalBoundary(), wire) || !wire.Closed()) {
+				return false;
+			}
+			if (!convert(bphfs->Position(), trsf)) {
+				return false;
+			}
+			
+			// TODO: Remove redundant points from wire, so that extrusion
+			// surfaces created from the wire do not overlap
+
+			wire.Move(trsf);
+
+			gp_Dir trsf_z = gp::DZ().Transformed(trsf);
+
+			// Construct a face to help make sure the wire is properly oriented
+			TopoDS_Face face = BRepBuilderAPI_MakeFace(halfspace_plane, wire).Face();
+			ShapeFix_Face fix(face);
+			fix.FixOrientation();
+			fix.Perform();
+			face = fix.Face();
+			wire = TopoDS::Wire(TopExp_Explorer(face, TopAbs_WIRE).Current());
+			// if (face.Orientation() == TopAbs_REVERSED) {
+			// 	wire.Reverse();
+			// }
+			
+			// Create unbounded surfaces that bound the halfspace volume
+			std::vector<Handle_Geom_Surface> surfaces;	
+
+			surfaces.push_back(halfspace_plane);
+
+			// A list of vertices is maintained in order to check whether coincident
+			// surfaces can really be eliminated from the subtraction volume
+			std::vector<gp_Pnt> s1_points;
+			{
+				TopExp_Explorer exp(s1, TopAbs_VERTEX);
+				while (exp.More()) {
+					s1_points.push_back(BRep_Tool::Pnt(TopoDS::Vertex(exp.Current())));
+					exp.Next();
+				}
+			}
+
+			TopExp_Explorer exp(wire, TopAbs_EDGE);
+			while (exp.More()) {
+
+				const bool reversed = exp.Current().Orientation() == TopAbs_REVERSED;
+				const bool disagree = trsf_z.Dot(hs_pln.Position().Direction()) < 0.;
+				
+				double a, b;
+				Handle_Geom_Curve crv = BRep_Tool::Curve(TopoDS::Edge(exp.Current()), a, b);
+				
+				if (crv->DynamicType() != STANDARD_TYPE(Geom_Line)) {
+					// Inspite of its name, the polygonal boundary can contain circular
+					// arc segments. This is however rather rare and therefore the check
+					// on coinceding faces is not implemented for such segments.
+					continue;
+				}
+
+				// Create planes from the polygonal boundary. The Adaptor package is used 
+				// to convert the interpret the extrusion surface as a elementary plane.
+				Handle(GeomAdaptor_HCurve) hcrv = new GeomAdaptor_HCurve();
+				hcrv->ChangeCurve().Load(crv, a, b);
+				Adaptor3d_SurfaceOfLinearExtrusion asurf(hcrv, trsf_z);
+				gp_Ax3 ax3 = asurf.Plane().Position();
+				if (reversed != disagree) {
+					ax3.SetAxis(ax3.Axis().Reversed());
+				}
+				Handle(Geom_Plane) pln = new Geom_Plane(gp_Pln(ax3));
+
+				const gp_Dir& d = pln->Pln().Position().Direction();
+
+				// Iterate over the BRep of operand1
+				TopExp_Explorer exp3(s1, TopAbs_FACE);
+				bool p = false;
+				while (exp3.More()) {
+					Handle_Geom_Surface srf2 = BRep_Tool::Surface(TopoDS::Face(exp3.Current()));
+					bool reversed = exp3.Current().Orientation() == TopAbs_REVERSED;
+					if (srf2->DynamicType() == STANDARD_TYPE(Geom_Plane)) {
+						Handle_Geom_Plane pln2 = Handle_Geom_Plane::DownCast(srf2);
+						const gp_Pln& p2 = pln2->Pln();
+						const gp_Pnt& p2pos = p2.Location();						
+						const gp_Dir& p2dir = p2.Position().Direction();
+						
+						// See whether there are faces that coincide with this extrusion surface
+						if (d.IsParallel(p2dir, 1e-3) && pln->Pln().Distance(p2pos) < 1e-5) {
+							bool outer = true;
+							// See if this face is part of the convex hull of the volume
+							for (auto it = s1_points.begin(); it != s1_points.end(); ++it) {
+								gp_XYZ v = it->XYZ() - p2pos.XYZ();
+								bool outside = v.Dot(p2dir.XYZ()) > 0.;
+								if (outside != reversed) {
+									if (p2.Distance(*it) > 1e-5) {
+										outer = false;
+										break;
+									}
+								}
+							}
+							if (outer) {
+								p = true;
+								break;
+							}
+						}
+					}
+					exp3.Next();
+				}
+
+				// See if this bounding surface of the halfspace is considered redundant
+				if (!p) {
+					surfaces.push_back(pln);
+				}
+
+				exp.Next();
+			}
+
+			// If surfaces.size() == 1 only the halfspace base surface is considered
+			// significant, a regular halfspace subtraction can be performed.
+			if (surfaces.size() == 1) {
+				degenerate_boundary = true;
+			} else {
+
+				TopoDS_Shape a, b;
+				TopoDS_Shell shell;
+
+				if (!create_shell_from_intersecting_surfaces_for_halfspace(surfaces, s1, shell)) {
+					return false;
+				}
+
+				ShapeFix_Shape fix(shell);
+				if (fix.Perform()) {
+					shell = TopoDS::Shell(fix.Shape());
+				}
+
+				{
+					BRep_Builder builder;
+					TopoDS_Compound cmp;
+					builder.MakeCompound(cmp);
+					builder.Add(cmp, s1);
+					builder.Add(cmp, shell);
+
+					std::ofstream fs("bier.brep");
+					BRepTools::Write(cmp, fs);
+				}
+
+				if (!split_solid_by_shell(s1, shell, a, b)) {
+					return false;
+				}
+				if (a.ShapeType() == TopAbs_COMPOUND && count(a, TopAbs_SOLID) == 1) {
+					a = TopExp_Explorer(a, TopAbs_SOLID).Current();
+				}
+
+				const double precision = getValue(GV_PRECISION);
+				apply_tolerance(a, precision);
+				
+				shape = a;
+				
+				return true;
+			}
+		}
+		if (!operand2->is(IfcSchema::Type::IfcPolygonalBoundedHalfSpace) || degenerate_boundary) {
+			TopoDS_Shape a, b;
+			if (!split_solid_by_surface(s1, halfspace_plane, a, b)) {
+				return false;
+			}
+
+			const double precision = getValue(GV_PRECISION);
+			apply_tolerance(a, precision);
+
+			shape = a;
+			return true;
 		}
 	} else {
-		Logger::Message(Logger::LOG_ERROR, "Invalid representation item for boolean operation", operand2->entity);
-	}
 
-	if (!shape2_processed) {
-		shape = s1;
-		Logger::Message(Logger::LOG_ERROR,"Failed to convert SecondOperand of:",l->entity);
-		return true;
-	}
+		bool shape2_processed = false;
+		if ( shape_type(operand2) == ST_SHAPELIST ) {
+			shape2_processed = convert_shapes(operand2, items2) && flatten_shape_list(items2, s2, true);
+		} else if ( shape_type(operand2) == ST_SHAPE ) {
+			shape2_processed = convert_shape(operand2,s2);
+			if (shape2_processed && !is_halfspace) {
+				TopoDS_Solid temp_solid;
+				s2 = ensure_fit_for_subtraction(s2, temp_solid);
+			}
+		} else {
+			Logger::Message(Logger::LOG_ERROR, "Invalid representation item for boolean operation", operand2->entity);
+		}
 
-	if (!is_halfspace) {
-		const double second_operand_volume = shape_volume(s2);
-		if ( second_operand_volume <= ALMOST_ZERO )
-			Logger::Message(Logger::LOG_WARNING,"Empty solid for:",operand2->entity);
+		if (!shape2_processed) {
+			shape = s1;
+			Logger::Message(Logger::LOG_ERROR, "Failed to convert SecondOperand of:", l->entity);
+			return true;
+		}
+
+		if (!is_halfspace) {
+			const double second_operand_volume = shape_volume(s2);
+			if ( second_operand_volume <= ALMOST_ZERO )
+				Logger::Message(Logger::LOG_WARNING, "Empty solid for:", operand2->entity);
+		}
 	}
 
 	const IfcSchema::IfcBooleanOperator::IfcBooleanOperator op = l->Operator();
