@@ -28,10 +28,14 @@ class OpenCascadeBasedSerializer : public GeometrySerializer {
 	OpenCascadeBasedSerializer(const OpenCascadeBasedSerializer&); //N/A
 	OpenCascadeBasedSerializer& operator =(const OpenCascadeBasedSerializer&); //N/A
 protected:
-	const std::string out_filename;
+	const filename_t out_filename;
 	const char* getSymbolForUnitMagnitude(float mag);
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	explicit OpenCascadeBasedSerializer(const std::wstring& out_filename)
+#else
 	explicit OpenCascadeBasedSerializer(const std::string& out_filename)
+#endif
 		: GeometrySerializer()
 		, out_filename(out_filename)
 	{}

@@ -45,7 +45,11 @@ protected:
 	std::vector< boost::shared_ptr<util::string_buffer::float_item> > radii;
 	IfcParse::IfcFile* file;
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	explicit SvgSerializer(const std::wstring& out_filename)
+#else
 	explicit SvgSerializer(const std::string& out_filename)
+#endif
 		: GeometrySerializer()
 		, svg_file(out_filename.c_str())
 		, xmin(+std::numeric_limits<double>::infinity())

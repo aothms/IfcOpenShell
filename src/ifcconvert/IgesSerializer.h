@@ -32,7 +32,11 @@ class IgesSerializer : public OpenCascadeBasedSerializer
 private:
 	IGESControl_Writer writer;	
 public:
-	explicit IgesSerializer(const std::string& out_filename) 
+#if defined(_MSC_VER) && defined(_UNICODE)
+	explicit IgesSerializer(const std::wstring& out_filename)
+#else
+	explicit IgesSerializer(const std::string& out_filename)
+#endif
 		: OpenCascadeBasedSerializer(out_filename) 
 	{}
 	virtual ~IgesSerializer() {}
@@ -40,7 +44,8 @@ public:
 		writer.AddShape(shape);
 	}
 	void finalize() {
-		writer.Write(out_filename.c_str());
+		std::ofstream fs(out_filename.c_str());
+		writer.Write(fs);
 	}
 	void setUnitNameAndMagnitude(const std::string& /*name*/, float magnitude) {
 		const char* symbol = getSymbolForUnitMagnitude(magnitude);

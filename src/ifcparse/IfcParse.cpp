@@ -69,6 +69,30 @@ void init_locale() {
 // 
 // Opens the file, gets the filesize and reads a chunk in memory
 //
+#if defined(_MSC_VER) && defined(_UNICODE)
+IfcSpfStream::IfcSpfStream(const std::wstring& fn) {
+	eof = false;
+	stream = _wfopen(fn.c_str(), L"rb");
+	if (stream == NULL) {
+		valid = false;
+		return;
+	}
+	valid = true;
+	fseek(stream, 0, SEEK_END);
+	size = (unsigned int) ftell(stream);;
+	rewind(stream);
+#ifdef BUF_SIZE
+	offset = 0;
+	paging = size > BUF_SIZE;
+	buffer = new char[size < BUF_SIZE ? size : BUF_SIZE];
+#else
+	buffer = new char[size];
+#endif
+	ptr = 0;
+	len = 0;	
+	ReadBuffer(false);
+}
+#else
 IfcSpfStream::IfcSpfStream(const std::string& fn) {
 	eof = false;
 #ifdef _MSC_VER
@@ -99,6 +123,7 @@ IfcSpfStream::IfcSpfStream(const std::string& fn) {
 	len = 0;	
 	ReadBuffer(false);
 }
+#endif
 
 IfcSpfStream::IfcSpfStream(std::istream& f, int l) {
 	eof = false;
@@ -902,7 +927,11 @@ IfcFile::IfcFile(bool create_latebound_entities)
 // Parses the IFC file in fn
 // Creates the maps
 //
+#if defined(_MSC_VER) && defined(_UNICODE)
+bool IfcFile::Init(const std::wstring& fn) {
+#else
 bool IfcFile::Init(const std::string& fn) {
+#endif
 	return IfcFile::Init(new IfcSpfStream(fn));
 }
 

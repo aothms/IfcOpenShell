@@ -61,7 +61,11 @@ namespace IfcParse {
 		bool valid;
 		bool eof;
 		unsigned int size;
+#if defined(_MSC_VER) && defined(_UNICODE)
+		IfcSpfStream(const std::wstring& fn);
+#else
 		IfcSpfStream(const std::string& fn);
+#endif
 		IfcSpfStream(std::istream& f, int len);
 		IfcSpfStream(void* data, int len);
 		/// Returns the character at the cursor 

@@ -25,9 +25,13 @@
 class XmlSerializer : public Serializer {
 private:
 	IfcParse::IfcFile* file;
-	std::string xml_filename;
+	filename_t xml_filename;
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	XmlSerializer(const std::wstring& xml_filename)
+#else
 	XmlSerializer(const std::string& xml_filename)
+#endif
 		: Serializer()
 		, xml_filename(xml_filename)
 	{}

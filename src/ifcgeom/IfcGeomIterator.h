@@ -470,7 +470,11 @@ namespace IfcGeom {
 		{
 			_initialize();
 		}
+#if defined(_MSC_VER) && defined(_UNICODE)
+		Iterator(const IteratorSettings& settings, const std::wstring& filename)
+#else
 		Iterator(const IteratorSettings& settings, const std::string& filename)
+#endif
 			: settings(settings)
 			, ifc_file(new IfcParse::IfcFile)
 			, owns_ifc_file(true)

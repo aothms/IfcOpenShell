@@ -34,7 +34,11 @@ private:
 	unsigned int vcount_total;
 	std::set<std::string> materials;
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	WaveFrontOBJSerializer(const std::wstring& obj_filename, const std::string& mtl_filename)
+#else
 	WaveFrontOBJSerializer(const std::string& obj_filename, const std::string& mtl_filename)
+#endif
 		: GeometrySerializer()
 		, obj_stream(obj_filename.c_str())
 		, mtl_filename(mtl_filename)

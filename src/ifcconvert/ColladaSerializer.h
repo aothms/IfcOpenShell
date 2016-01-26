@@ -158,7 +158,11 @@ private:
 	std::string unit_name;
 	float unit_magnitude;
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	ColladaSerializer(const std::wstring& dae_filename)
+#else
 	ColladaSerializer(const std::string& dae_filename)
+#endif
 		: GeometrySerializer()
 		, exporter("IfcOpenShell", dae_filename)
 	{}

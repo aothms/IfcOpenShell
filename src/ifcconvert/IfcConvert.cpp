@@ -31,6 +31,16 @@
 #include <set>
 #include <time.h>
 
+#ifdef _MSC_VER
+#include <tchar.h>
+#endif
+
+#ifndef _TEXT
+// A MSVC macro to turn c-string literals into wide-char equivalents if
+// _UNICODE is defined. The macro is defined here for other platforms.
+#define _TEXT(x) x
+#endif
+
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -46,7 +56,15 @@
 #include <IGESControl_Controller.hxx>
 #include <Standard_Version.hxx>
 
-static std::string DEFAULT_EXTENSION = "obj";
+static filename_t DOT = _TEXT(".");
+static filename_t OBJ = _TEXT(".obj");
+static filename_t DAE = _TEXT(".dae");
+static filename_t STP = _TEXT(".stp");
+static filename_t IGS = _TEXT(".igs");
+static filename_t SVG = _TEXT(".svg");
+static filename_t XML = _TEXT(".xml");
+static filename_t MTL = _TEXT("mtl");
+static filename_t DEFAULT_EXTENSION = _TEXT("obj");
 
 void printVersion() {
 	std::cerr << "IfcOpenShell IfcConvert " << IFCOPENSHELL_VERSION << std::endl;
@@ -70,29 +88,33 @@ void printUsage(const boost::program_options::options_description& generic_optio
 	          << "Advanced options" << std::endl << geom_options << std::endl;
 }
 
-std::string change_extension(const std::string& fn, const std::string& ext) {
+filename_t change_extension(const filename_t& fn, const filename_t& ext) {
 	std::string::size_type dot = fn.find_last_of('.');
 	if (dot != std::string::npos) {
 		return fn.substr(0,dot+1) + ext;
 	} else {
-		return fn + "." + ext;
+		return fn + DOT + ext;
 	}
 }
 
 static std::stringstream log_stream;
 void write_log();
 
-int main(int argc, char** argv) {
+#ifdef _MSC_VER
+int _tmain(int argc, _TCHAR* argv[]) {
+#else
+int main(int argc, char* argv[]) {
+#endif
 	boost::program_options::options_description generic_options;
 	generic_options.add_options()
 		("help", "display usage information")
 		("version", "display version information")
 		("verbose,v", "more verbose output");
-
+	
 	boost::program_options::options_description fileio_options;
 	fileio_options.add_options()
-		("input-file", boost::program_options::value<std::string>(), "input IFC file")
-		("output-file", boost::program_options::value<std::string>(), "output geometry file");
+		("input-file", new boost::program_options::typed_value<filename_t, filename_t::value_type>(0), "input IFC file")
+		("output-file", new boost::program_options::typed_value<filename_t, filename_t::value_type>(0), "output file");
 
 	std::string bounds;
 	std::vector<std::string> entity_vector;
@@ -159,7 +181,15 @@ int main(int argc, char** argv) {
 
 	boost::program_options::variables_map vmap;
 	try {
-		boost::program_options::store(boost::program_options::command_line_parser(argc, argv).
+#ifdef _MSC_VER
+#ifdef _UNICODE
+		boost::program_options::store(boost::program_options::basic_command_line_parser<wchar_t>(argc, argv).
+#else
+		boost::program_options::store(boost::program_options::command_line_parser(argc, argv, false).
+#endif
+#else
+		boost::program_options::store(boost::program_options::command_line_parser(argc, argv, true).
+#endif
 				  options(cmdline_options).positional(positional_options).run(), vmap);
 	} catch (const boost::program_options::unknown_option& e) {
 		std::cerr << "[Error] Unknown option '" << e.get_option_name() << "'" << std::endl << std::endl;
@@ -212,12 +242,13 @@ int main(int argc, char** argv) {
 		const std::string& mixed_case_type = *it;
 		entities.insert(boost::to_lower_copy(mixed_case_type));
 	}
-	
-	const std::string input_filename = vmap["input-file"].as<std::string>();
+
+	const filename_t input_filename = vmap["input-file"].as<filename_t>();
+
 	// If no output filename is specified a Wavefront OBJ file will be output
 	// to maintain backwards compatibility with the obsolete IfcObj executable.
-	const std::string output_filename = vmap.count("output-file") == 1 
-		? vmap["output-file"].as<std::string>()
+	const filename_t output_filename = vmap.count("output-file") == 1 
+		? vmap["output-file"].as<filename_t>()
 		: change_extension(input_filename, DEFAULT_EXTENSION);
 	
 	if (output_filename.size() < 5) {
@@ -225,12 +256,12 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	std::string output_extension = output_filename.substr(output_filename.size()-4);
+	filename_t output_extension = output_filename.substr(output_filename.size()-4);
 	boost::to_lower(output_extension);
 
 	// If no entities are specified these are the defaults to skip from output
 	if (entity_vector.empty()) {
-		if (output_extension == ".svg") {
+		if (output_extension == SVG) {
 			entities.insert("ifcspace");
 			include_entities = true;
 		} else {
@@ -242,7 +273,7 @@ int main(int argc, char** argv) {
 	Logger::SetOutput(&std::cout, &log_stream);
 	Logger::Verbosity(verbose ? Logger::LOG_NOTICE : Logger::LOG_ERROR);
 
-	if (output_extension == ".xml") {
+	if (output_extension == XML) {
 		int exit_code = 1;
 		try {
 			XmlSerializer s(output_filename);
@@ -274,25 +305,40 @@ int main(int argc, char** argv) {
 	settings.set(IfcGeom::IteratorSettings::EXCLUDE_SOLIDS_AND_SURFACES,  !include_model);
 
 	GeometrySerializer* serializer;
-	if (output_extension == ".obj") {
-		const std::string mtl_filename = output_filename.substr(0,output_filename.size()-3) + "mtl";
+	if (output_extension == OBJ) {
+		const filename_t mtl_filename_wide = output_filename.substr(0,output_filename.size()-3) + MTL;
+
+		// We do not want to write UCS-2 obj files, as this would double their size. Therefore, there
+		// is no guarantee that we can easily write the .mtl file as a reference in the .obj file. For
+		// this reason, non-ASCII values are removed and a std::string is used.
+		std::string mtl_filename_narrow;
+		mtl_filename_narrow.reserve(mtl_filename_wide.size());
+		for (auto it = mtl_filename_wide.begin(); it != mtl_filename_wide.end(); ++it) {
+			const wchar_t c = *it;
+			if (c >= 0x80) {
+				mtl_filename_narrow.push_back('_');
+			} else {
+				mtl_filename_narrow.push_back((char) c);
+			}
+		}
+
 		if (!use_world_coords) {
 			Logger::Message(Logger::LOG_NOTICE, "Using world coords when writing WaveFront OBJ files");
 			settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
 		}
-		serializer = new WaveFrontOBJSerializer(output_filename, mtl_filename);
+		serializer = new WaveFrontOBJSerializer(output_filename, mtl_filename_narrow);
 #ifdef WITH_OPENCOLLADA
-	} else if (output_extension == ".dae") {
+	} else if (output_extension == DAE) {
 		serializer = new ColladaSerializer(output_filename);
 #endif
-	} else if (output_extension == ".stp") {
+	} else if (output_extension == STP) {
 		serializer = new StepSerializer(output_filename);
-	} else if (output_extension == ".igs") {
+	} else if (output_extension == IGS) {
 		// Not sure why this is needed, but it is.
 		// See: http://tracker.dev.opencascade.org/view.php?id=23679
 		IGESControl_Controller::Init();
 		serializer = new IgesSerializer(output_filename);
-	} else if (output_extension == ".svg") {
+	} else if (output_extension == SVG) {
 		settings.set(IfcGeom::IteratorSettings::DISABLE_TRIANGULATION, true);
 		serializer = new SvgSerializer(output_filename);
 		if (bounding_width && bounding_height) {

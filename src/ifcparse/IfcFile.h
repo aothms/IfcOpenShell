@@ -20,6 +20,12 @@
 #ifndef IFCFILE_H
 #define IFCFILE_H
 
+#if defined(_MSC_VER) && defined(_UNICODE)
+	typedef std::wstring filename_t;
+#else
+	typedef std::string filename_t;
+#endif
+
 #include <map>
 #include <set>
 
@@ -109,7 +115,11 @@ public:
 	/// in the first function argument.
 	IfcEntityList::ptr traverse(IfcUtil::IfcBaseClass* instance, int max_level=-1);
 
+#if defined(_MSC_VER) && defined(_UNICODE)
+	bool Init(const std::wstring& fn);
+#else
 	bool Init(const std::string& fn);
+#endif
 	bool Init(std::istream& fn, int len);
 	bool Init(void* data, int len);
 	bool Init(IfcParse::IfcSpfStream* f);

@@ -287,5 +287,6 @@ void XmlSerializer::finalize() {
 #else
 	boost::property_tree::xml_writer_settings<char> settings('\t', 1);
 #endif
-	boost::property_tree::write_xml(xml_filename, root, std::locale(), settings);
+	std::ofstream fs(xml_filename.c_str());
+	boost::property_tree::write_xml(fs, root, settings);
 }

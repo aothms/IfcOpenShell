@@ -20,6 +20,11 @@
 #ifndef STEPSERIALIZER_H
 #define STEPSERIALIZER_H
 
+#include <stdio.h>
+#if defined(_MSC_VER) && defined(_UNICODE)
+#include <stdlib.h>
+#endif
+
 #include <STEPControl_Writer.hxx>
 #include <Interface_Static.hxx>
 
@@ -32,7 +37,11 @@ class StepSerializer : public OpenCascadeBasedSerializer
 private:
 	STEPControl_Writer writer;	
 public:
+#if defined(_MSC_VER) && defined(_UNICODE)
+	explicit StepSerializer(const std::wstring& out_filename) 
+#else
 	explicit StepSerializer(const std::string& out_filename) 
+#endif
 		: OpenCascadeBasedSerializer(out_filename) 
 	{}
 	virtual ~StepSerializer() {}
@@ -45,7 +54,19 @@ public:
 	void finalize() {
 		std::stringstream ss;
 		std::streambuf *sb = std::cout.rdbuf(ss.rdbuf());
+#if defined(_MSC_VER) && defined(_UNICODE)
+		// hack hack hack
+		char* tmp_filename = tmpnam(0);
+		size_t tmp_filename_size = strlen(tmp_filename) + 1;
+		wchar_t* tmp_filename_wide = new wchar_t[tmp_filename_size];
+		writer.Write(tmp_filename);
+		size_t out;
+		mbstowcs_s(&out, tmp_filename_wide, tmp_filename_size, tmp_filename, tmp_filename_size - 1);
+		_wrename(tmp_filename_wide, out_filename.c_str());
+		delete[] tmp_filename_wide;
+#else
 		writer.Write(out_filename.c_str());
+#endif				
 		std::cout.rdbuf(sb);
 	}
 	void setUnitNameAndMagnitude(const std::string& /*name*/, float magnitude) {

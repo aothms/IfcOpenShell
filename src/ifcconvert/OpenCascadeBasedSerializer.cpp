@@ -32,7 +32,11 @@ bool OpenCascadeBasedSerializer::ready() {
 	std::ofstream test_file(out_filename.c_str(), std::ios_base::binary);
 	bool succeeded = test_file.is_open();
 	test_file.close();
+#if defined(_MSC_VER) && defined(_UNICODE)
+	_wremove(out_filename.c_str());
+#else
 	remove(out_filename.c_str());
+#endif
 	return succeeded;
 }
 
