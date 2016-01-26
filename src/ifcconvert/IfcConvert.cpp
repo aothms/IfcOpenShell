@@ -181,14 +181,10 @@ int main(int argc, char* argv[]) {
 
 	boost::program_options::variables_map vmap;
 	try {
-#ifdef _MSC_VER
-#ifdef _UNICODE
+#if defined(_MSC_VER) && defined(_UNICODE)
 		boost::program_options::store(boost::program_options::basic_command_line_parser<wchar_t>(argc, argv).
 #else
-		boost::program_options::store(boost::program_options::command_line_parser(argc, argv, false).
-#endif
-#else
-		boost::program_options::store(boost::program_options::command_line_parser(argc, argv, true).
+		boost::program_options::store(boost::program_options::command_line_parser(argc, argv).
 #endif
 				  options(cmdline_options).positional(positional_options).run(), vmap);
 	} catch (const boost::program_options::unknown_option& e) {
