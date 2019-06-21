@@ -115,7 +115,8 @@ struct IfcproductRepresentation
 	IfcSchema::IfcRepresentation *representation;
 	IfcSchema::IfcProduct *product;
 	IfcGeom::Element<real_t> *geom_object;
-	IfcGeom::BRepElement<real_t> *element;
+	IfcGeom::BRepElement<real_t> *brep;
+	IfcGeom::TriangulationElement<real_t> *element;
 };
 
 struct Bounds
@@ -126,7 +127,7 @@ struct Bounds
 
 // From iterator: //////////////////////////////////////
 bool reuse_ok_(SerializerSettings settings, const IfcSchema::IfcProduct::list::ptr &products, IfcGeom::Kernel kernel);
-void create_element(SerializerSettings &settings, IfcproductRepresentation &rep, IfcGeom::Kernel);
+void create_element(SerializerSettings &settings, IfcproductRepresentation &rep, IfcGeom::KernelIfc2x3&);
 Bounds compute_bounds(IfcParse::IfcFile *, IfcGeom::Kernel);
 void write_element(boost::shared_ptr<GeometrySerializer>, IfcproductRepresentation *, bool);
 ////////////////////////////////////////////////////////
@@ -1217,7 +1218,7 @@ int main(int argc, char **argv)
 	for (representation_iterator = representations->begin(); representation_iterator != representations->end(); representation_iterator++)
 	{
 		IfcSchema::IfcRepresentation *representation = *representation_iterator;
-		ifcproducts.reset();
+		ifcproducts.reset(new IfcSchema::IfcProduct::list);
 
 		wcout << "--Representation: " << &representation << endl;
 
@@ -1302,7 +1303,7 @@ int main(int argc, char **argv)
 	for (int j = 0; j < (int)IfcproductRepresentations.size(); j++)
 	{
 		IfcproductRepresentation &r = IfcproductRepresentations[j];
-		create_element(settings, r, kernel);
+		create_element(settings, r, kernel2x3);
 
 	// if (threadpool.size() < conc_threads)
 	// {
@@ -1343,6 +1344,10 @@ int main(int argc, char **argv)
 		//write_element(serializer, rep, is_tesselated);
 		cout_ << "writing to file, element #: " << rep->index << "\n";
 		IfcGeom::Element<real_t> *geom_object = rep->element;
+		if (geom_object == nullptr) {
+			cout_ << "skipped" << std::endl;
+			continue;
+		}
 		if (is_tesselated)
 		{
 			serializer->write(static_cast<const IfcGeom::TriangulationElement<real_t> *>(geom_object));
@@ -2047,18 +2052,20 @@ void write_element(boost::shared_ptr<GeometrySerializer> serializer, IfcproductR
 	}
 }
 
-void create_element(SerializerSettings &settings, IfcproductRepresentation &rep, IfcGeom::Kernel kernel)
+void create_element(SerializerSettings &settings, IfcproductRepresentation &rep, IfcGeom::KernelIfc2x3& kernel2x3)
 {
   ////////////////////////////////////////////////////////////
   //  is kernel thread-safe (-ish) ?
+  //  @tfk: no, it's not, my advise would be to boot one
+  //        kernel instance per thread.
   ////////////////////////////////////////////////////////////
-  IfcGeom::KernelIfc2x3 kernel2x3;
   Logger::Status("processing item #: " + std::to_string(rep.index));
   // IfcGeom::Kernel kernel;
   IfcSchema::IfcRepresentation *representation = rep.representation;
   IfcSchema::IfcProduct *product = rep.product;
   // IfcGeom::BRepElement<real_t> *element;
-  rep.element = kernel2x3.create_brep_for_representation_and_product<real_t, real_t>(settings, representation, product);
+  rep.brep = kernel2x3.create_brep_for_representation_and_product<real_t, real_t>(settings, representation, product);
+  rep.element = rep.brep ? new IfcGeom::TriangulationElement<double>(*rep.brep) : nullptr;
   // if(geometry_reuse_ok_for_current_representation_)
   //     {
   //   // element =
