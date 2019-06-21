@@ -98,8 +98,8 @@ static std::wostream &cout_ = std::wcout;
 static std::wostream &cerr_ = std::wcerr;
 #else
 typedef std::string path_t;
-static std::ostream &cout_ = std::cout;
-static std::ostream &cerr_ = std::cerr;
+static std::ostream &cout_ = std::wcout;
+static std::ostream &cerr_ = std::wcerr;
 #endif
 
 const std::string DEFAULT_EXTENSION = "obj";
@@ -197,7 +197,7 @@ bool file_exists(const std::string &filename)
 
 static std::basic_stringstream<path_t::value_type> log_stream;
 void write_log(bool);
-void fix_quantities(IfcParse::IfcFile &, bool, bool, bool, string);
+void fix_quantities(IfcParse::IfcFile &, bool, bool, bool);
 std::string format_duration(time_t start, time_t end);
 
 /// @todo make the filters non-global
@@ -484,7 +484,7 @@ int main(int argc, char **argv)
 	}
 	else if (!vmap.count("input-file"))
 	{
-		std::cerr << "[Error] Input file not specified" << std::endl;
+		std::wcerr << "[Error] Input file not specified" << std::endl;
 		print_usage();
 		return EXIT_FAILURE;
 	}
@@ -502,7 +502,7 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			std::cerr << "[Error] --log-format should be either plain or json" << std::endl;
+			std::wcerr << "[Error] --log-format should be either plain or json" << std::endl;
 			print_usage();
 			return EXIT_FAILURE;
 		}
@@ -517,7 +517,7 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			std::cerr << "[Error] No filters read from specifified file.\n";
+			std::wcerr << "[Error] No filters read from specifified file.\n";
 			return EXIT_FAILURE;
 		}
 	}
@@ -550,8 +550,8 @@ int main(int argc, char **argv)
 		}
 		catch (const std::exception &e)
 		{
-			std::cerr << "[Error] Could not read default material file:" << std::endl;
-			std::cerr << e.what() << std::endl;
+			std::wcerr << "[Error] Could not read default material file:" << std::endl;
+			std::wcerr << e.what() << std::endl;
 			return EXIT_FAILURE;
 		}
 	}
@@ -665,7 +665,7 @@ int main(int argc, char **argv)
 				{
 					if (vmap.count("calculate-quantities"))
 					{
-						fix_quantities(*ifc_file, no_progress, quiet, stderr_progress, output_filename);
+						fix_quantities(*ifc_file, no_progress, quiet, stderr_progress);
 					}
 					fs << *ifc_file;
 					exit_code = EXIT_SUCCESS;
@@ -771,7 +771,7 @@ int main(int argc, char **argv)
 	settings.set(SerializerSettings::USE_MATERIAL_NAMES, use_material_names);
 	settings.set(SerializerSettings::USE_ELEMENT_TYPES, use_element_types);
 	settings.set(SerializerSettings::USE_ELEMENT_HIERARCHY, use_element_hierarchy);
-	cout << "Use deflection tolerance" << deflection_tolerance << endl;
+	wcout << "Use deflection tolerance" << deflection_tolerance << endl;
 	settings.set_deflection_tolerance(deflection_tolerance);
 	settings.precision = precision;
 
@@ -787,7 +787,7 @@ int main(int argc, char **argv)
 			Logger::Notice("Using world coords when writing WaveFront OBJ files");
 			settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
 		}
-		serializer = boost::make_shared<WaveFrontOBJSerializer>(IfcUtil::path::to_utf8(output_temp_filename), IfcUtil::path::to_utf8(mtl_filename), IfcUtil::path::to_utf8(meta_filename), settings);
+		serializer = boost::make_shared<WaveFrontOBJSerializer>(IfcUtil::path::to_utf8(output_temp_filename), IfcUtil::path::to_utf8(mtl_filename), settings);
 #ifdef WITH_OPENCOLLADA
 	}
 	else if (output_extension == DAE)
@@ -883,9 +883,7 @@ int main(int argc, char **argv)
 	// ok_mapped_representations = IfcSchema::IfcRepresentation::list::ptr(new IfcSchema::IfcRepresentation::list);
 
 	IfcGeom::Iterator<real_t> context_iterator(settings, ifc_file, filter_funcs);
-	const string elevationFileName = change_extension(output_filename, IfcUtil::path::from_utf8(ELEVATION_EXTENSION));
-	const string gridFileName = change_extension(output_filename, IfcUtil::path::from_utf8(GRID_EXTENSION));
-	if (!context_iterator.initialize(elevationFileName, gridFileName))
+	if (!context_iterator.initialize())
 	{
 		/// @todo It would be nice to know and print separate error prints for a case where we found no entities
 		/// and for a case we found no entities that satisfy our filtering criteria.
@@ -933,7 +931,7 @@ int main(int argc, char **argv)
 			offset[0] = -center.X();
 			offset[1] = -center.Y();
 			offset[2] = -center.Z();
-			std::cout << "X: " << offset[0] << "Y: " << offset[1] << "Z: " << offset[2] << endl;
+			std::wcout << "X: " << offset[0] << "Y: " << offset[1] << "Z: " << offset[2] << endl;
 		}
 		else
 		{
@@ -971,7 +969,7 @@ int main(int argc, char **argv)
 	///////////////////////                 Multithreading            //////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	IfcGeom::Kernel kernel;
+	IfcGeom::Kernel kernel(ifc_file);
 	IfcGeom::KernelIfc2x3 kernel2x3;
 	size_t num_created = 0;
 	int currentElementIndex = 0;
@@ -982,7 +980,7 @@ int main(int argc, char **argv)
       IfcSchema::IfcRepresentation::list::ptr(new IfcSchema::IfcRepresentation::list);
 	IfcSchema::IfcRepresentation::list::it representation_iterator;
 
-	cout << "-Number of representations before: " << representations->size() << endl;
+	wcout << "-Number of representations before: " << representations->size() << endl;
 
 		std::set<std::string> allowed_context_types;
 		allowed_context_types.insert("model");
@@ -1124,12 +1122,12 @@ int main(int argc, char **argv)
 			return false;
 		}
 
-	cout << "-Number of representations after: " << representations->size() << endl;
+	wcout << "-Number of representations after: " << representations->size() << endl;
 
 
 	// do
 	// {
-	// 	std::cout << "Solving element " << num_created << endl;
+	// 	std::wcout << "Solving element " << num_created << endl;
 	// 	IfcGeom::Element<real_t> *geom_object = context_iterator.get();
 
 	// 	if (is_tesselated)
@@ -1148,13 +1146,13 @@ int main(int argc, char **argv)
 	// 			const int progress = context_iterator.progress();
 	// 			for (; old_progress < progress; ++old_progress)
 	// 			{
-	// 				std::cout << ".";
+	// 				std::wcout << ".";
 	// 				if (stderr_progress)
-	// 					std::cerr << ".";
+	// 					std::wcerr << ".";
 	// 			}
-	// 			std::cout << std::flush;
+	// 			std::wcout << std::flush;
 	// 			if (stderr_progress)
-	// 				std::cerr << std::flush;
+	// 				std::wcerr << std::flush;
 	// 		}
 	// 		else
 	// 		{
@@ -1170,13 +1168,13 @@ int main(int argc, char **argv)
 	// {
 	// 	for (; old_progress < 100; ++old_progress)
 	// 	{
-	// 		std::cout << ".";
+	// 		std::wcout << ".";
 	// 		if (stderr_progress)
-	// 			std::cerr << ".";
+	// 			std::wcerr << ".";
 	// 	}
-	// 	std::cout << std::flush;
+	// 	std::wcout << std::flush;
 	// 	if (stderr_progress)
-	// 		std::cerr << std::flush;
+	// 		std::wcerr << std::flush;
 	// }
 	// else
 	// {
@@ -1186,7 +1184,7 @@ int main(int argc, char **argv)
 	IfcSchema::IfcMaterialLayerSetUsage::Class();
 	vector<future<bool>> threadpool;
 	unsigned int concurrency = std::thread::hardware_concurrency();
-	cout << "Threads available: " << concurrency << endl;
+	wcout << "Threads available: " << concurrency << endl;
 
 	// From Sander's version/work
 	std::vector<IfcGeom::filter_t> filters_;
@@ -1199,7 +1197,7 @@ int main(int argc, char **argv)
 
 	filters_.emplace_back(boost::ref(layer_filter));
 	filters_.emplace_back(boost::ref(entity_filter));
-	filters_.emplace_back(boost::ref(attribute_filter));
+	// filters_.emplace_back(boost::ref(attribute_filter));
 	bool geometry_reuse_ok_for_current_representation_;
 
 	// fucntor
@@ -1221,18 +1219,18 @@ int main(int argc, char **argv)
 		IfcSchema::IfcRepresentation *representation = *representation_iterator;
 		ifcproducts.reset();
 
-		cout << "--Representation: " << &representation << endl;
+		wcout << "--Representation: " << &representation << endl;
 
 		IfcSchema::IfcProduct::list::ptr unfiltered_products = kernel2x3.products_represented_by(representation);
 
-		cout << "--Unfiltered Products : " << unfiltered_products << " size: " << unfiltered_products->size() << endl;
+		wcout << "--Unfiltered Products : " << unfiltered_products << " size: " << unfiltered_products->size() << endl;
 
 		IfcSchema::IfcRepresentationMap::list::ptr maps = representation->RepresentationMap();
 
 		geometry_reuse_ok_for_current_representation_ = reuse_ok_(settings, unfiltered_products, kernel2x3);
 
 
-		cout << "--geometry_reuse_ok_for_current_representation_: " << geometry_reuse_ok_for_current_representation_ << endl;
+		wcout << "--geometry_reuse_ok_for_current_representation_: " << geometry_reuse_ok_for_current_representation_ << endl;
 
 
 		if(!geometry_reuse_ok_for_current_representation_ && maps->size() == 1)
@@ -1252,17 +1250,17 @@ int main(int argc, char **argv)
 			bool contains = ok_mapped_representations->contains(representation_mapped_to);
 			bool reuse = reuse_ok_(settings, kernel2x3.products_represented_by(representation_mapped_to), kernel);
 			representation_processed_as_mapped_item = contains || reuse;
-			cout << "--representation_processed_as_mapped_item: " << representation_processed_as_mapped_item << endl;
+			wcout << "--representation_processed_as_mapped_item: " << representation_processed_as_mapped_item << endl;
 		}
 		if (representation_processed_as_mapped_item)
 		{
 			ok_mapped_representations->push(representation_mapped_to);
 			// _nextShape();
-			cout << "--ok_mapped_representations: " << ok_mapped_representations << endl;
+			wcout << "--ok_mapped_representations: " << ok_mapped_representations << endl;
 			continue;
 		}
 
-		cout << "--unfiltered_products: " << unfiltered_products->size() << endl;
+		wcout << "--unfiltered_products: " << unfiltered_products->size() << endl;
 		// Filter the products based on the set of entities and/or names being included or excluded for processing.
 		for (IfcSchema::IfcProduct::list::it jt = unfiltered_products->begin(); jt != unfiltered_products->end(); ++jt)
 		{
@@ -1274,32 +1272,32 @@ int main(int argc, char **argv)
 		}
 
 		Logger::Status("Test 6");
-		cout << "--Ifc product iterator starting" << endl;
-		cout << "--ifcproducts: " << ifcproducts << endl;
-		cout << "--Testing ifcproducts" << endl;
+		wcout << "--Ifc product iterator starting" << endl;
+		wcout << "--ifcproducts: " << ifcproducts << endl;
+		wcout << "--Testing ifcproducts" << endl;
 
 		for (ifcproduct_iterator = ifcproducts->begin(); ifcproduct_iterator != ifcproducts->end(); ifcproduct_iterator++)
 		{
-			cout << "-flag 0" << endl;
+			wcout << "-flag 0" << endl;
 			IfcproductRepresentation ir;
-			cout << "-flag 1" << endl;
+			wcout << "-flag 1" << endl;
 			ir.index = index_count;
-			cout << "-ir.index" << endl;
+			wcout << "-ir.index" << endl;
 			ir.product = *ifcproduct_iterator;
-			cout << "-ir.product" << endl;
+			wcout << "-ir.product" << endl;
 			ir.representation = representation;
-			cout << "-ir.representation" << endl;
+			wcout << "-ir.representation" << endl;
 			IfcproductRepresentations.push_back(ir);
-			cout << "-IfcproductRepresentations.push_back(ir)" << endl;
+			wcout << "-IfcproductRepresentations.push_back(ir)" << endl;
 			index_count++;
-			cout << "-index_count: " << index_count << endl;
+			wcout << "-index_count: " << index_count << endl;
 		}
 		Logger::Status("Test 7");
 	}
 
 	Logger::Status("Test 8");
 
-	cout << "-Number of representations: " << IfcproductRepresentations.size() << endl;
+	wcout << "-Number of representations: " << IfcproductRepresentations.size() << endl;
 
 	for (int j = 0; j < (int)IfcproductRepresentations.size(); j++)
 	{
@@ -1752,7 +1750,7 @@ IfcUtil::IfcBaseClass *create(IfcParse::IfcFile &f, const std::string &entity)
 }
 } // namespace latebound_access
 
-void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool stderr_progress, string output_filename)
+void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool stderr_progress)
 {
 	{
 		auto delete_reversed = [&f](const IfcEntityList::ptr &insts) {
@@ -1814,9 +1812,7 @@ void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool std
 	settings.set(IfcGeom::IteratorSettings::DISABLE_TRIANGULATION, true);
 
 	IfcGeom::Iterator<double> context_iterator(settings, &f);
-	const string elevationFileName = change_extension(output_filename, IfcUtil::path::from_utf8(ELEVATION_EXTENSION));
-	const string gridFileName = change_extension(output_filename, IfcUtil::path::from_utf8(GRID_EXTENSION));
-	if (!context_iterator.initialize(elevationFileName, gridFileName))
+	if (!context_iterator.initialize())
 	{
 		return;
 	}
@@ -1856,7 +1852,7 @@ void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool std
 		bool has_more = true;
 		if (num_created)
 		{
-			has_more = context_iterator.next(num_created);
+			has_more = context_iterator.next();
 		}
 		IfcGeom::BRepElement<double> *geom_object = nullptr;
 		if (has_more)
@@ -1948,13 +1944,13 @@ void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool std
 				const int progress = context_iterator.progress();
 				for (; old_progress < progress; ++old_progress)
 				{
-					std::cout << ".";
+					std::wcout << ".";
 					if (stderr_progress)
-						std::cerr << ".";
+						std::wcerr << ".";
 				}
-				std::cout << std::flush;
+				std::wcout << std::flush;
 				if (stderr_progress)
-					std::cerr << std::flush;
+					std::wcerr << std::flush;
 			}
 			else
 			{
@@ -1970,13 +1966,13 @@ void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool std
 	{
 		for (; old_progress < 100; ++old_progress)
 		{
-			std::cout << ".";
+			std::wcout << ".";
 			if (stderr_progress)
-				std::cerr << ".";
+				std::wcerr << ".";
 		}
-		std::cout << std::flush;
+		std::wcout << std::flush;
 		if (stderr_progress)
-			std::cerr << std::flush;
+			std::wcerr << std::flush;
 	}
 	else
 	{
@@ -1991,7 +1987,7 @@ void fix_quantities(IfcParse::IfcFile &f, bool no_progress, bool quiet, bool std
 
 bool reuse_ok_(SerializerSettings settings, const IfcSchema::IfcProduct::list::ptr &products, IfcGeom::Kernel kernel)
 {
-	cout << "-Reuse ok begin" << endl;
+	wcout << "-Reuse ok begin" << endl;
 	IfcGeom::KernelIfc2x3 kernel2x3;
 	if(settings.get(IfcGeom::IteratorSettings::USE_WORLD_COORDS))
 	{
@@ -1999,7 +1995,7 @@ bool reuse_ok_(SerializerSettings settings, const IfcSchema::IfcProduct::list::p
 	}
 
 	std::set<const IfcSchema::IfcMaterial *> associated_single_materials;
-	cout << "-products: " << products << endl;
+	wcout << "-products: " << products << endl;
 
 	for(IfcSchema::IfcProduct::list::it it = products->begin(); it != products->end(); ++it)
 	{
@@ -2018,7 +2014,7 @@ bool reuse_ok_(SerializerSettings settings, const IfcSchema::IfcProduct::list::p
 			IfcSchema::IfcRelAssociatesMaterial *assoc = (*jt)->as<IfcSchema::IfcRelAssociatesMaterial>();
 			if (assoc)
 			{
-					cout << "-Assoc: " << assoc << endl;
+					wcout << "-Assoc: " << assoc << endl;
 				//if (assoc->RelatingMaterial()->is(IfcSchema::IfcMaterialLayerSetUsage))
 					if (assoc->RelatingMaterial()->declaration().is(IfcSchema::IfcMaterialLayerSetUsage::Class()))
 				{
@@ -2030,11 +2026,11 @@ bool reuse_ok_(SerializerSettings settings, const IfcSchema::IfcProduct::list::p
 		associated_single_materials.insert(kernel2x3.get_single_material_association(product));
 		if (associated_single_materials.size() > 1)
 		{
-			cout << "-Associated single materials size is > 1" << endl;
+			wcout << "-Associated single materials size is > 1" << endl;
 		return false;
 		}
 	}
-	cout << "-Associated single materials size is == 1" << endl;
+	wcout << "-Associated single materials size is == 1" << endl;
 	return associated_single_materials.size() == 1;
 }
 

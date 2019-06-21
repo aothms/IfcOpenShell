@@ -83,7 +83,6 @@
 
 #include "../ifcgeom_schema_agnostic/IfcGeomFilter.h"
 #include "../ifcgeom_schema_agnostic/IteratorImplementation.h"
-#include "../serializers/json.hpp"
 
 // The infamous min & max Win32 #defines can leak here from OCE depending on the build configuration
 #ifdef min
@@ -92,9 +91,6 @@
 #ifdef max
 #undef max
 #endif
-
-using json = nlohmann::json;
-using namespace std;
 
 namespace IfcGeom
 {
@@ -180,7 +176,7 @@ public:
 	typedef P Precision;
 	typedef PP PlacementPrecision;
 
-	bool initialize(std::string elevationFileName, std::string gridFileName)
+	bool initialize()
 	{
 		try
 		{
@@ -342,67 +338,10 @@ public:
 
 		done = 0;
 		total = representations->size();
-		cout << "Total representations: " << total << endl;
-		cout << "Start parsing custom data" << endl;
+		std::wcout << "Total representations: " << total << endl;
+		std::wcout << "Start parsing custom data" << endl;
 		IfcSchema::IfcProduct::list::ptr products = ifc_file->instances_by_type<IfcSchema::IfcProduct>();
-		cout << "IfcProduct parsing done " << endl;
-
-		map<string, int> categoryMap;
-
-		for (auto it = products->begin(); it != products->end(); it++)
-		{
-			IfcSchema::IfcProduct *product = *it;
-			string categoryName = product->declaration().name();
-			auto categoryIt = categoryMap.find(categoryName);
-			if (categoryIt != categoryMap.end())
-			{
-				categoryIt->second += 1;
-			}
-			else
-			{
-				categoryMap.insert(pair<string, int>(categoryName, 0));
-			}
-		}
-
-		ifcGroups = ifc_file->instances_by_type<IfcSchema::IfcRelAssignsToGroup>();
-		this->formGroupMap();
-		std::cout << "IfcRelAssignsToGroup parse done" << std::endl;
-		ifcDecomposes = ifc_file->instances_by_type<Ifc2x3::IfcRelDecomposes>();
-		this->formAssemblyMap();
-		cout << "IfcRelDecomposes parse done " << endl;
-		ifcDefineByProperties = ifc_file->instances_by_type<Ifc2x3::IfcRelDefinesByProperties>();
-		cout << "IfcRelDefinesByProperties parse done " << endl;
-		ifcAggregates = ifc_file->instances_by_type<IfcSchema::IfcRelAggregates>();
-		cout << "IfcRelAggregates parse done " << endl;
-		ifcLayers = ifc_file->instances_by_type<IfcSchema::IfcPresentationLayerAssignment>();
-		ifcProductDefinationShapes = ifc_file->instances_by_type<IfcSchema::IfcProductDefinitionShape>();
-		this->formLayerMap();
-		cout << "Layer parse  done" << endl;
-		ifcGridList = ifc_file->instances_by_type<IfcSchema::IfcGrid>();
-		cout << "IfcGrid parse done" << endl;
-		ifcStories = ifc_file->instances_by_type<IfcSchema::IfcBuildingStorey>();
-		cout << "IfcBuildingStorey parse done" << endl;
-		this->getGridAxis(gridFileName);
-		cout << "getGridAxis done" << endl;
-		this->floorToHeight(elevationFileName);
-		cout << "floorToHeight done" << endl;
-
-		for (auto mapIt = categoryMap.begin(); mapIt != categoryMap.end(); mapIt++)
-		{
-			std::cout << mapIt->first // key(Category name)
-								<< ':'
-								<< mapIt->second // value(amount)
-								<< std::endl;
-		}
-		std::cout << "Grid amount: " << ifcGridList->size() << std::endl;
-		std::cout << "Floor amount: " << ifcStories->size() << std::endl;
-		std::cout << "IfcProduct amount: " << products->size() << std::endl;
-		std::cout << "Group amount: " << ifcGroups->size() << std::endl;
-		std::cout << "Decomposes amount: " << ifcDecomposes->size() << std::endl;
-		std::cout << "DefineByProperties amount: " << ifcDefineByProperties->size() << std::endl;
-		std::cout << "Layer amout: " << ifcLayers->size() << std::endl;
-		std::cout << "Product shape defination amount: " << ifcProductDefinationShapes->size() << std::endl;
-		std::cout << "Aggregation amount: " << ifcAggregates->size() << std::endl;
+		std::wcout << "IfcProduct parsing done " << endl;
 
 		return true;
 	}
@@ -458,7 +397,7 @@ public:
 
 	void formGroupMap()
 	{
-		std::cout << "Group amount " << ifcGroups->size() << std::endl;
+		std::wcout << "Group amount " << ifcGroups->size() << std::endl;
 		for (IfcSchema::IfcRelAssignsToGroup::list::it iter = ifcGroups->begin(); iter != ifcGroups->end(); ++iter)
 		{
 			IfcSchema::IfcRelAssignsToGroup *group = *iter;
@@ -522,109 +461,6 @@ public:
 					}
 				}
 		}
-	}
-
-	void getGridAxis(std::string gridFileName)
-	{
-		json gridList;
-		std::ofstream out_stream(gridFileName);
-		for (auto iter = ifcGridList->begin(); iter != ifcGridList->end(); ++iter)
-		{
-
-			json gridJson;
-			auto *ifcGrid = *iter;
-			auto containedInStrucurelist = ifcGrid->ContainedInStructure();
-			std::string storyName = "";
-			for (auto sIter = containedInStrucurelist->begin(); sIter != containedInStrucurelist->end(); sIter++)
-			{
-				auto *structure = *sIter;
-				auto *structureElement = structure->RelatingStructure();
-				try
-				{
-					if (structureElement->declaration().is(IfcSchema::IfcBuildingStorey::Class()))
-					{
-						if (structureElement->hasName())
-						{
-							storyName = structureElement->Name();
-							break;
-						}
-					}
-				}
-				catch (const std::exception &e)
-				{
-					Logger::Error(e);
-					break;
-				}
-			}
-			try
-			{
-				auto uAxes = ifcGrid->UAxes();
-				auto vAxes = ifcGrid->VAxes();
-				this->getLineForAxes(uAxes, gridJson);
-				this->getLineForAxes(vAxes, gridJson);
-				gridList[storyName].push_back(gridJson);
-			}
-			catch (const std::exception &e)
-			{
-				Logger::Error(e);
-			}
-		}
-		out_stream << gridList << endl;
-	}
-	void getLineForAxes(IfcTemplatedEntityList<IfcSchema::IfcGridAxis>::ptr axes, json &grid)
-	{
-		for (auto uIter = axes->begin(); uIter != axes->end(); ++uIter)
-		{
-			auto *axis = *uIter;
-			json line;
-			std::string tag = "";
-			if (axis->hasAxisTag())
-			{
-				tag = axis->AxisTag();
-			}
-			auto *curve = axis->AxisCurve();
-			if (curve->declaration().is(IfcSchema::IfcPolyline::Class()))
-			{
-				line["tag"] = tag;
-				auto *polyLine = curve->as<IfcSchema::IfcPolyline>();
-				auto pointList = polyLine->Points();
-				// cout << "========== Line" << axis->AxisTag() <<  "============" << endl;
-				for (auto pointIter = pointList->begin(); pointIter != pointList->end(); ++pointIter) // 2 POINTS Typically
-				{
-					json pointJson;
-					auto *point = *pointIter;
-					// cout << "Point " <<  i << " ";
-					// cout << "x: " << point->Coordinates()[0] << "y: " << point->Coordinates()[1] << "z: " << point->Coordinates()[2] << endl;
-					pointJson["x"] = point->Coordinates()[0] * this->getUnitMagnitude();
-					pointJson["y"] = point->Coordinates()[1] * this->getUnitMagnitude();
-					pointJson["z"] = point->Coordinates()[2] * this->getUnitMagnitude();
-					line["point"].push_back(pointJson);
-				}
-			}
-			grid.push_back(line);
-		}
-	}
-
-	void floorToHeight(std::string elevationFileName)
-	{
-		json elevation;
-		std::ofstream out_stream(elevationFileName);
-		for (auto iter = ifcStories->begin(); iter != ifcStories->end(); ++iter)
-		{
-			auto *ifcStorey = *iter;
-			if (ifcStorey->hasName())
-			{
-				cout << " Name: " << ifcStorey->Name();
-				if (ifcStorey->hasElevation())
-				{
-					elevation[ifcStorey->Name()] = ifcStorey->Elevation() * this->getUnitMagnitude();
-					cout << " Elevation: " << ifcStorey->Elevation() << " " << this->getUnitName();
-				}
-			}
-			cout << endl;
-		}
-
-		out_stream << elevation << endl;
 	}
 
 	int progress() const { return 100 * done / total; }
@@ -731,7 +567,7 @@ private:
 				for (IfcSchema::IfcProduct::list::it jt = unfiltered_products->begin(); jt != unfiltered_products->end(); ++jt)
 				{
 					IfcSchema::IfcProduct *prod = *jt;
-					// cout << prod->GlobalId() << endl;
+					// std::wcout << prod->GlobalId() << endl;
 					if (boost::all(filters_, filter_match(prod)))
 					{
 
@@ -747,7 +583,7 @@ private:
 
 				geometry_reuse_ok_for_current_representation_ = reuse_ok_(ifcproducts);
 				// geometry_reuse_ok_for_current_representation_= true;
-				cout << geometry_reuse_ok_for_current_representation_ << endl;
+				std::wcout << geometry_reuse_ok_for_current_representation_ << endl;
 
 				IfcSchema::IfcRepresentationMap::list::ptr maps = representation->RepresentationMap();
 
@@ -793,25 +629,25 @@ private:
 			}
 
 			IfcSchema::IfcProduct *product = *ifcproduct_iterator;
-			cout << product->declaration().name() << endl;
-			cout << product->declaration().index_in_schema() << endl;
-			cout << product->GlobalId() << endl;
+			std::wcout << product->declaration().name().c_str() << endl;
+			std::wcout << product->declaration().index_in_schema() << endl;
+			std::wcout << product->GlobalId().c_str() << endl;
 			Logger::SetProduct(product);
 
 			BRepElement<P, PP> *element;
 			if (ifcproduct_iterator == ifcproducts->begin() || !geometry_reuse_ok_for_current_representation_)
 			{
-				cout << "CXreate BREP 1" << endl;
+				std::wcout << "CXreate BREP 1" << endl;
 				element = kernel.create_brep_for_representation_and_product<P, PP>(settings, representation, product);
-				cout << "CXreate BREP Done" << endl;
+				std::wcout << "CXreate BREP Done" << endl;
 			}
 			else
 			{
-				cout << "CXreate BREP 2" << endl;
+				std::wcout << "CXreate BREP 2" << endl;
 
 				element = kernel.create_brep_for_processed_representation(settings, representation, product, current_shape_model);
 
-				cout << "CXreate BREP 2 Done" << endl;
+				std::wcout << "CXreate BREP 2 Done" << endl;
 			}
 
 			Logger::SetProduct(boost::none);
@@ -854,7 +690,7 @@ public:
 
 	/// Moves to the next shape representation, create its geometry, and returns the associated product.
 	/// Use get() to retrieve the created geometry.
-	IfcUtil::IfcBaseClass *next(int index)
+	IfcUtil::IfcBaseClass *next()
 	{
 		// Increment the iterator over the list of products using the current
 		// shape representation
@@ -862,7 +698,7 @@ public:
 		{
 			++ifcproduct_iterator;
 		}
-		return create(index);
+		return create();
 	}
 
 	/// Gets the representation of the current geometrical entity.
@@ -1037,15 +873,6 @@ public:
 			}
 		}
 
-		std::string groupName = this->getGroupName(ret->guid());
-		std::string assemblyName = this->getAssemblyName(ret->guid());
-		std::string subTypeName = this->getSubTypeName(ret->guid());
-		std::string layerName = this->getLayerName(ret->guid());
-
-		ret->setGroupName(groupName);
-		ret->setAssemblyName(assemblyName);
-		ret->setSubTypeName(subTypeName);
-		ret->setLayerName(layerName);
 		return ret;
 	}
 
@@ -1136,89 +963,15 @@ public:
 		return ifc_object;
 	}
 
-	IfcUtil::IfcBaseClass *create(int index)
-	{
-		IfcGeom::BRepElement<P, PP> *next_shape_model = 0;
-		IfcGeom::SerializedElement<P, PP> *next_serialization = 0;
-		IfcGeom::TriangulationElement<P, PP> *next_triangulation = 0;
-
-		try
-		{
-			cout << "next_shape_model start" << endl;
-			next_shape_model = create_shape_model_for_next_entity();
-		}
-		catch (const std::exception &e)
-		{
-			Logger::Error(e);
-		}
-		catch (const Standard_Failure &e)
-		{
-			if (e.GetMessageString() && strlen(e.GetMessageString()))
-			{
-				Logger::Error(e.GetMessageString());
-			}
-			else
-			{
-				Logger::Error("Unknown error creating geometry");
-			}
-		}
-		catch (...)
-		{
-			Logger::Error("Unknown error creating geometry");
-		}
-
-		if (next_shape_model)
-		{
-			if (settings.get(IteratorSettings::USE_BREP_DATA))
-			{
-				try
-				{
-					next_serialization = new SerializedElement<P, PP>(*next_shape_model);
-				}
-				catch (...)
-				{
-					Logger::Message(Logger::LOG_ERROR, "Getting a serialized element from model failed.");
-				}
-			}
-			else if (!settings.get(IteratorSettings::DISABLE_TRIANGULATION))
-			{
-				try
-				{
-					if (ifcproduct_iterator == ifcproducts->begin() || !geometry_reuse_ok_for_current_representation_)
-					{
-						cout << "trianglation start" << endl;
-						next_triangulation = new TriangulationElement<P, PP>(*next_shape_model);
-					}
-					else
-					{
-						cout << "trianglation start2" << endl;
-						next_triangulation = new TriangulationElement<P, PP>(*next_shape_model, current_triangulation->geometry_pointer());
-					}
-				}
-				catch (...)
-				{
-					Logger::Message(Logger::LOG_ERROR, "Getting a triangulation element from model failed.");
-				}
-			}
-		}
-		cout << "free shapes start" << endl;
-
-		free_shapes();
-
-		current_shape_model = next_shape_model;
-		current_serialization = next_serialization;
-		current_triangulation = next_triangulation;
-
-		return next_shape_model ? next_shape_model->product() : 0;
-	}
-
 	IfcUtil::IfcBaseClass *create()
 	{
 		IfcGeom::BRepElement<P, PP> *next_shape_model = 0;
 		IfcGeom::SerializedElement<P, PP> *next_serialization = 0;
 		IfcGeom::TriangulationElement<P, PP> *next_triangulation = 0;
+
 		try
 		{
+			std::wcout << "next_shape_model start" << endl;
 			next_shape_model = create_shape_model_for_next_entity();
 		}
 		catch (const std::exception &e)
@@ -1260,10 +1013,12 @@ public:
 				{
 					if (ifcproduct_iterator == ifcproducts->begin() || !geometry_reuse_ok_for_current_representation_)
 					{
+						std::wcout << "trianglation start" << endl;
 						next_triangulation = new TriangulationElement<P, PP>(*next_shape_model);
 					}
 					else
 					{
+						std::wcout << "trianglation start2" << endl;
 						next_triangulation = new TriangulationElement<P, PP>(*next_shape_model, current_triangulation->geometry_pointer());
 					}
 				}
@@ -1273,6 +1028,7 @@ public:
 				}
 			}
 		}
+		std::wcout << "free shapes start" << endl;
 
 		free_shapes();
 

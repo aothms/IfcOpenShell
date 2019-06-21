@@ -3534,7 +3534,7 @@ bool IfcGeom::Kernel::fit_halfspace(const TopoDS_Shape& a, const TopoDS_Shape& b
 	Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
 
 	// const gp_XYZ xyz = a.Location().Transformation().TranslationPart();
-	// std::cout << "dz " << xyz.Z() << std::endl;
+	// std::wcout << "dz " << xyz.Z() << std::endl;
 
 	if (surf->DynamicType() != STANDARD_TYPE(Geom_Plane)) {
 		return false;
