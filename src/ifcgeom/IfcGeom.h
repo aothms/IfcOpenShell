@@ -63,7 +63,7 @@ inline static bool ALMOST_THE_SAME(const T& a, const T& b, double tolerance=ALMO
 
 // Define this in case you want to conserve memory usage at all cost. This has been
 // benchmarked extensively: https://github.com/IfcOpenShell/IfcOpenShell/pull/47
-// #define NO_CACHE
+#define NO_CACHE
 
 #ifdef NO_CACHE
 
@@ -348,6 +348,7 @@ public:
 	const IfcSchema::IfcMaterial* get_single_material_association(const IfcSchema::IfcProduct*);
 	IfcSchema::IfcRepresentation* representation_mapped_to(const IfcSchema::IfcRepresentation* representation);
 	IfcSchema::IfcProduct::list::ptr products_represented_by(const IfcSchema::IfcRepresentation*);
+
 	const SurfaceStyle* get_style(const IfcSchema::IfcRepresentationItem*);
 	const SurfaceStyle* get_style(const IfcSchema::IfcMaterial*);
 	
