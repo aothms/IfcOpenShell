@@ -464,6 +464,9 @@ def build_dependency(name, mode, build_tool_args, download_url, download_name, d
         shutil.copytree(os.path.join(extract_dir, "boost"), os.path.join(DEPS_DIR, "install", f"boost-{BOOST_VERSION}", "boost"))
         logger.info(f"\rInstalled {name}     \n")
 
+    if "diskcleanup" in flags:
+        shutil.rmtree(build_dir, ignore_errors=True)
+
 cecho("Collecting dependencies:", GREEN)
 
 # Set compiler flags for 32bit builds on 64bit system

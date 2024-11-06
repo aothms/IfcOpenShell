@@ -48,7 +48,7 @@ jobs:
 
       - name: Run Build Script
         run: |
-          python3 ./nix/build-all.py
+          BUILD_CFG=Release python3 ./nix/build-all.py --diskcleanup
 
       - name: Pack Dependencies
         run: |
