@@ -11,7 +11,20 @@ on:
 
 jobs:
   build_ifcopenshell:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-20.04
+            arch: x64
+          - os: macos
+            runner: macos-13
+            arch: x64
+          - os: macos
+            runner: macos-14
+            arch: arm64
 
     steps:
       - name: Checkout Repository
@@ -24,7 +37,7 @@ jobs:
         with:
           repository: aothms/build-outputs
           path: ./build
-          ref: main # @todo branch equals platform
+          ref: ${{ matrix.os }}-${{ matrix.arch }}
           lfs: true
 
       - name: Set up Python
@@ -38,7 +51,14 @@ jobs:
           sudo apt-get install -y git gcc g++ autoconf bison make cmake \
               mesa-common-dev libffi-dev libfontconfig1-dev libgl1-mesa-dev \
               libxext-dev libxmu-dev libxi-dev
-
+        if: runner.os == 'linux'
+        
+      - name: Install Dependencies
+        run: |
+          brew update
+          brew install git bison autoconf automake libffi cmake
+        if: runner.os == 'macos'
+        
       - name: Unpack Dependencies
         run: |
           find ./build -type f -name '*.tar.gz' -exec tar -xzf {} -C $(dirname {}) \;
@@ -46,11 +66,14 @@ jobs:
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: ${GITHUB_WORKFLOW}
+          key: ${GITHUB_WORKFLOW}-${{ matrix.os }}
 
       - name: Run Build Script
         run: |
-          BUILD_CFG=Release python3 ./nix/build-all.py --diskcleanup
+          if [ "${{ matrix.os }}" == "macos" ]; then
+            DARWIN_C_SOURCE=-D_DARWIN_C_SOURCE
+          fi
+          CXXFLAGS="-O3" CFLAGS="-O3" ADD_COMMIT_SHA=1 BUILD_CFG=Release $DARWIN_C_SOURCE python3 ./nix/build-all.py --diskcleanup --py-310
 
       - name: Pack Dependencies
         run: |
