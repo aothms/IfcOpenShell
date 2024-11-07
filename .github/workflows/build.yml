@@ -73,7 +73,7 @@ jobs:
           if [ "${{ matrix.os }}" == "macos" ]; then
             DARWIN_C_SOURCE=-D_DARWIN_C_SOURCE
           fi
-          CXXFLAGS="-O3" CFLAGS="-O3" ADD_COMMIT_SHA=1 BUILD_CFG=Release $DARWIN_C_SOURCE python3 ./nix/build-all.py --diskcleanup --py-310
+          CXXFLAGS="-O3" CFLAGS="-O3 ${DARWIN_C_SOURCE}" ADD_COMMIT_SHA=1 BUILD_CFG=Release python3 ./nix/build-all.py --diskcleanup --py-310
 
       - name: Pack Dependencies
         run: |
