@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+        with:
+          submodules: recursive
 
       - name: Checkout Build Repository
         uses: actions/checkout@v3
