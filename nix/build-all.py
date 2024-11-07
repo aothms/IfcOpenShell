@@ -527,7 +527,7 @@ if 'hdf5' in targets:
     # not supported
     orig = [os.environ[f] for f in compiler_flags]
     for f in compiler_flags:
-        os.environ[f] = re.sub("-flto(=\w+)?", "", os.environ[f])
+        os.environ[f] = re.sub(r"-flto(=\w+)?", "", os.environ[f])
 
     HDF5_MAJOR = ".".join(HDF5_VERSION.split(".")[:-1])
     build_dependency(
