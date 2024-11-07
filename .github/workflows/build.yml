@@ -39,6 +39,7 @@ jobs:
           path: ./build
           ref: ${{ matrix.os }}-${{ matrix.arch }}
           lfs: true
+          token: ${{ secrets.BUILD_REPO_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -89,5 +90,3 @@ jobs:
           git add "$(find . -maxdepth 4 -name install)/*.tar.gz"
           git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.BUILD_REPO_TOKEN }}
