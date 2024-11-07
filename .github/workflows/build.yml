@@ -88,6 +88,6 @@ jobs:
           git config user.email "ifcopenbot@ifcopenshell.org"
           git add "$(find . -maxdepth 4 -name install)/*.tar.gz"
           git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
-          git push origin main
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.BUILD_REPO_TOKEN }}
