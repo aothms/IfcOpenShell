@@ -57,7 +57,8 @@ jobs:
       - name: Install Dependencies
         run: |
           brew update
-          brew install git bison autoconf automake libffi cmake
+          brew install git bison autoconf automake libffi cmake findutils
+          echo "$(brew --prefix findutils)/libexec/gnubin" >> $GITHUB_PATH
         if: runner.os == 'macos'
         
       - name: Unpack Dependencies
