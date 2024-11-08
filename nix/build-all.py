@@ -743,7 +743,8 @@ if "boost" in targets:
             *map(str_concat("linkflags"), LDFLAGS.strip().split(' ')),
             "stage", "-s", "NO_BZIP2=1"],
         download_url=BOOST_LOCATION,
-        patch="./patches/boost/boostorg_regex_62.patch",
+        # don't remember what this is, but fail on 1.86
+        # patch="./patches/boost/boostorg_regex_62.patch",
         download_name=f"boost_{BOOST_VERSION_UNDERSCORE}.tar.bz2"
     )
     if "wasm" in flags:
