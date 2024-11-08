@@ -79,6 +79,7 @@ jobs:
 
       - name: Pack Dependencies
         run: |
+          cd build
           for install_dir in $(find $(find . -maxdepth 4 -name install) -mindepth 1 -maxdepth 1 -type d); do
             tar -czf "$install_dir.tar.gz" "$install_dir";
           done
