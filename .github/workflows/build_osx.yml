@@ -129,4 +129,5 @@ jobs:
           aws-region: us-east-1
 
       - name: Upload .zip archives to S3
+        run: |
           aws s3 cp ~/output s3://ifcopenshell-builds/
