@@ -34,11 +34,6 @@ jobs:
           lfs: true
           token: ${{ secrets.BUILD_REPO_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
       - name: Unpack Dependencies
         run: |
           find ./build -type f -name 'cache-*.tar.gz' -exec tar -xzf {} -C '$(dirname {})' \;
