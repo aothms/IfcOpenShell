@@ -1,4 +1,4 @@
-name: Build IfcOpenShell
+name: Build IfcOpenShell OSX
 
 on:
   push:
