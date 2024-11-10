@@ -68,7 +68,7 @@ jobs:
         run: |
           cd build
           for install_dir in $(find $(find . -maxdepth 4 -name install) -mindepth 1 -maxdepth 1 -type d); do
-            tar -czf $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz -C $(dirname "$install_dir") $(basename "$install_dir");
+            test -f $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz || tar -czf $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz -C $(dirname "$install_dir") $(basename "$install_dir");
           done
 
       - name: Commit and Push Changes to Build Repository
@@ -78,7 +78,7 @@ jobs:
           git config user.email "ifcopenbot@ifcopenshell.org"
           git add "$(find . -maxdepth 4 -name install)/*.tar.gz"
           git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
-          git push
+          git push || true
 
       - name: Package .zip archives
         run: |

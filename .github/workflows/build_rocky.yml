@@ -52,7 +52,7 @@ jobs:
         run: |
           cd build
           for install_dir in $(find $(find . -maxdepth 4 -name install) -mindepth 1 -maxdepth 1 -type d); do
-            tar -czf $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz -C $(dirname "$install_dir") $(basename "$install_dir");
+            test -f $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz || tar -czf $(dirname "$install_dir")/cache-$(basename "$install_dir").tar.gz -C $(dirname "$install_dir") $(basename "$install_dir");
           done
 
       - name: Commit and Push Changes to Build Repository
@@ -62,4 +62,47 @@ jobs:
           git config user.email "ifcopenbot@ifcopenshell.org"
           git add "$(find . -maxdepth 4 -name install)/*.tar.gz"
           git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
-          git push
+          git push || true
+
+      - name: Package .zip archives
+        run: |
+          VERSION=`cat VERSION`
+          cd ./build/`uname`/*/install/ifcopenshell
+          mkdir ~/output
+
+          ls -d python-* | while read py_version; do
+              postfix=`echo ${py_version: -1} | sed s/[0-9]//`
+              numbers=`echo $py_version | grep -oE '[0-9]+\.[0-9]+' | tr -d '.'`
+              py_version_major=python-${numbers}$postfix
+              pushd . > /dev/null
+              cd $py_version
+              if [ ! -d ifcopenshell ]; then
+                  mkdir ../ifcopenshell_
+                  mv * ../ifcopenshell_
+                  mv ../ifcopenshell_ ifcopenshell
+              fi
+              [ -d ifcopenshell/__pycache__ ] && rm -rf ifcopenshell/__pycache__
+              find ifcopenshell -name "*.pyc" -delete
+              zip -r -qq ifcopenshell-${py_version_major}-${VERSION}-${GITHUB_SHA:0:7}-linux64.zip ifcopenshell/*
+              mv *.zip ~/output
+              popd > /dev/null
+          done
+
+          cd bin
+          rm *.zip || true
+          ls | while read exe; do
+              zip -qq -r ${exe}-${VERSION}-${GITHUB_SHA:0:7}-linux64.zip $exe
+          done
+          mv *.zip ~/output
+          cd ..
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_UPLOAD_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_UPLOAD_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload .zip archives to S3
+        run: |
+          aws s3 cp ~/output s3://ifcopenshell-builds/ --recursive
