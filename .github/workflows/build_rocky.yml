@@ -19,7 +19,15 @@ jobs:
                          bzip2 patch mesa-libGL-devel libffi-devel fontconfig-devel      \
                          sqlite-devel bzip2-devel zlib-devel openssl-devel xz-devel      \
                          readline-devel ncurses-devel libffi-devel libuuid-devel git-lfs \
-                         findutils awscli
+                         findutils
+
+      - name: Install aws cli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          rm -rf awscliv2.zip aws
+          aws --version
 
       - name: Checkout Repository
         uses: actions/checkout@v3
