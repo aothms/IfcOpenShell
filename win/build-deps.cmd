@@ -21,7 +21,7 @@
 :: a deduced generator will be used for %1 and BUILD_CFG_DEFAULT for %2 (both set in vs-cfg.cmd)
 :: Optionally a build type (Build/Rebuild/Clean) can be passed as %3.
 
-@echo off
+
 echo.
 
 for %%Q in ("%~dp0\.") DO set "batpath=%%~fQ"

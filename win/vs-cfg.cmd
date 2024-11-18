@@ -36,7 +36,7 @@
 ::
 :: NOTE: The delayed environment variable expansion needs to be enabled before calling this.
 
-@echo off
+
 
 set GENERATOR=%1
 
