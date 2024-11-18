@@ -24,11 +24,12 @@ import bonsai.bim
 import bonsai.tool as tool
 import bonsai.core.model as core
 from bonsai.bim.module.model.wall import DumbWallJoiner
-from bonsai.bim.helper import prop_with_search
+from bonsai.bim.helper import prop_with_search, draw_attribute
 from bpy.types import WorkSpaceTool, Menu
 from bonsai.bim.module.model.data import AuthoringData, ItemData
 from bonsai.bim.module.system.data import PortData
 from bonsai.bim.module.model.prop import get_ifc_class
+from typing import Optional
 
 
 # TODO duplicate code in cad/workspace and model/workspace
@@ -106,13 +107,21 @@ class BimTool(WorkSpaceTool):
     ifc_element_type = "all"
 
     @classmethod
-    def draw_settings(cls, context, layout, ws_tool):
+    def draw_settings(
+        cls, context: bpy.types.Context, layout: bpy.types.UILayout, ws_tool: bpy.types.WorkSpaceTool
+    ) -> None:
         if context.scene.BIMGeometryProperties.mode == "ITEM":
             EditItemUI.draw(context, layout)
-        elif context.active_object and context.selected_objects and tool.Ifc.get_entity(context.active_object):
+        elif (
+            active_ifc_object := (context.active_object and tool.Ifc.get_entity(context.active_object))
+        ) and context.selected_objects:
             EditObjectUI.draw(context, layout, ifc_element_type=cls.ifc_element_type)
         else:
             CreateObjectUI.draw(context, layout, ifc_element_type=cls.ifc_element_type)
+            # Show some UI for spatial elements that are unselectable by default.
+            if active_ifc_object:
+                EditObjectUI.layout = layout  # Prevent .draw_modes from using old layout and crash.
+                EditObjectUI.draw_modes(context)
 
 
 class WallTool(BimTool):
@@ -257,10 +266,14 @@ def format_ifc_camel_case(string):
 
 
 class EditItemUI:
+    layout: bpy.types.UILayout
+
     @classmethod
-    def draw(cls, context: bpy.types.Context, layout: bpy.types.UILayout):
+    def draw(cls, context: bpy.types.Context, layout: bpy.types.UILayout) -> None:
         if not ItemData.is_loaded:
             ItemData.load()
+        if not AuthoringData.is_loaded:
+            AuthoringData.load()
 
         cls.layout = layout
         row = cls.layout.row()
@@ -270,13 +283,13 @@ class EditItemUI:
         row = cls.layout.row()
         row.label(text="Type: " + ItemData.data["representation_type"], icon="OUTLINER_OB_MESH")
         cls.layout.menu("BIM_MT_add_representation_item", icon="ADD")
-        if not ItemData.data["is_representation_item_active"]:
+        if not AuthoringData.data["is_representation_item_active"]:
             return
         obj = context.active_object
         assert obj
         for item_attribute in obj.data.BIMMeshProperties.item_attributes:
             row = cls.layout.row()
-            row.prop(item_attribute, item_attribute.get_value_name(display_only=True), text=item_attribute.name)
+            draw_attribute(item_attribute, cls.layout)
         if len(obj.data.BIMMeshProperties.item_attributes):
             row = cls.layout.row()
             row.operator("bim.update_item_attributes", icon="FILE_REFRESH", text="")
@@ -313,13 +326,16 @@ class BIM_MT_add_representation_item(Menu):
         if ItemData.data["representation_type"] in ("Annotation2D"):
             self.layout.operator("bim.add_curvelike_item", icon="IPO_CONSTANT", text="Polycurve").shape = "LINE"
             self.layout.operator("bim.add_curvelike_item", icon="MESH_CIRCLE", text="Circle").shape = "CIRCLE"
+            self.layout.operator("bim.add_curvelike_item", icon="MESH_CIRCLE", text="Ellipse").shape = "ELLIPSE"
 
 
 class CreateObjectUI:
     layout: bpy.types.UILayout
 
     @classmethod
-    def draw(cls, context, layout, ifc_element_type=None):
+    def draw(
+        cls, context: bpy.types.Context, layout: bpy.types.UILayout, ifc_element_type: Optional[str] = None
+    ) -> None:
         cls.layout = layout
         cls.props = context.scene.BIMModelProperties
 
@@ -430,30 +446,31 @@ class CreateObjectUI:
         if not AuthoringData.data["relating_type_id"]:
             return
 
-        if cls.props.ifc_class == "IfcWallType":
+        ifc_class = AuthoringData.data["ifc_class_current"]
+        if ifc_class == "IfcWallType":
             row.prop(data=cls.props, property="rl1", text="Relative Level" if ui_context != "TOOL_HEADER" else "RL")
             row = cls.layout.row(align=True) if ui_context != "TOOL_HEADER" else row
             row.prop(data=cls.props, property="extrusion_depth", text="Height" if ui_context != "TOOL_HEADER" else "H")
             row = cls.layout.row(align=True) if ui_context != "TOOL_HEADER" else row
             row.prop(data=cls.props, property="x_angle", text="Slope") if ui_context != "TOOL_HEADER" else "A"
 
-        elif cls.props.ifc_class in ("IfcSlabType", "IfcRampType", "IfcRoofType"):
+        elif ifc_class in ("IfcSlabType", "IfcRampType", "IfcRoofType"):
             row.prop(
                 data=cls.props, property="x_angle", text="Slope" if ui_context != "TOOL_HEADER" else "A", icon="FILE_3D"
             )
 
-        elif cls.props.ifc_class in ("IfcColumnType", "IfcMemberType"):
+        elif ifc_class in ("IfcColumnType", "IfcMemberType"):
             row.prop(data=cls.props, property="cardinal_point", text="Axis")
             row.prop(data=cls.props, property="extrusion_depth", text="Height" if ui_context != "TOOL_HEADER" else "H")
 
-        elif cls.props.ifc_class in ("IfcBeamType"):
+        elif ifc_class in ("IfcBeamType"):
             row.prop(data=cls.props, property="cardinal_point", text="Axis")
             row.prop(data=cls.props, property="extrusion_depth", text="Length" if ui_context != "TOOL_HEADER" else "L")
 
-        elif cls.props.ifc_class in ("IfcDoorType", "IfcDoorStyle"):
+        elif ifc_class in ("IfcDoorType", "IfcDoorStyle"):
             row.prop(data=cls.props, property="rl1", text="Relative Level" if ui_context != "TOOL_HEADER" else "RL")
 
-        elif cls.props.ifc_class in (
+        elif ifc_class in (
             "IfcWindowType",
             "IfcWindowStyle",
             "IfcDoorType",
@@ -468,7 +485,7 @@ class CreateObjectUI:
             )
 
         ### this neeeds to move
-        elif cls.props.ifc_class in ("IfcSpaceType"):
+        elif ifc_class in ("IfcSpaceType"):
             add_layout_hotkey_operator(cls.layout, "Generate", "S_G", bpy.ops.bim.generate_space.__doc__, ui_context)
         ###
         else:
@@ -482,7 +499,8 @@ class CreateObjectUI:
         if not AuthoringData.data["ifc_element_type"]:
             prop_with_search(row, cls.props, "ifc_class", text="Type Class" if ui_context != "TOOL_HEADER" else "")
         if AuthoringData.data["ifc_classes"]:
-            if cls.props.ifc_class:
+            ifc_class = AuthoringData.data["ifc_class_current"]
+            if ifc_class:
                 box = cls.layout.box()
                 row = box.row(align=True)
                 if AuthoringData.data["type_thumbnail"] and ui_context == "TOOL_HEADER":
@@ -527,7 +545,7 @@ class CreateObjectUI:
                             icon="FILE_REFRESH",
                             emboss=False,
                         )
-                        op.ifc_class = cls.props.ifc_class
+                        op.ifc_class = ifc_class
 
                     row = box.row(align=True)
                     row.alignment = "CENTER"
@@ -539,8 +557,12 @@ class CreateObjectUI:
 
 
 class EditObjectUI:
+    layout: bpy.types.UILayout
+
     @classmethod
-    def draw(cls, context, layout, ifc_element_type=None):
+    def draw(
+        cls, context: bpy.types.Context, layout: bpy.types.UILayout, ifc_element_type: Optional[str] = None
+    ) -> None:
         cls.layout = layout
         cls.props = context.scene.BIMModelProperties
 
@@ -847,7 +869,7 @@ class EditObjectUI:
         )
 
     @classmethod
-    def draw_modes(cls, context):
+    def draw_modes(cls, context: bpy.types.Context) -> None:
         ui_context = str(context.region.type)
         row = cls.layout.row(align=True)
         row.separator()
@@ -907,7 +929,7 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
 
         if get_ifc_class(None, None):
             try:
-                self.has_ifc_class = bool(self.props.ifc_class)
+                self.has_ifc_class = bool(tool.Blender.get_enum_safe(self.props, "ifc_class"))
             except:
                 pass
         getattr(self, f"hotkey_{self.hotkey}")()
@@ -931,18 +953,18 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
 
     def hotkey_S_A(self):
         props = bpy.context.scene.BIMModelProperties
+        relating_type_id = AuthoringData.data["relating_type_id_current"]
+        props.relating_type_id = relating_type_id
         if bpy.context.scene.BIMGeometryProperties.mode == "ITEM":
             bpy.ops.wm.call_menu(name="BIM_MT_add_representation_item")
         else:
             for obj in tool.Blender.get_selected_objects():
                 obj.select_set(False)
-            if (
-                relating_type_id := tool.Blender.get_enum_safe(props, "relating_type_id")
-            ) and tool.Model.get_usage_type(tool.Ifc.get().by_id(int(relating_type_id))) == "LAYER2":
+            if relating_type_id and tool.Model.get_usage_type(tool.Ifc.get().by_id(int(relating_type_id))) == "LAYER2":
                 bpy.ops.bim.draw_polyline_wall("INVOKE_DEFAULT")
             elif (
-                relating_type_id := tool.Blender.get_enum_safe(props, "relating_type_id")
-            ) and tool.Model.get_usage_type(tool.Ifc.get().by_id(int(relating_type_id))) == "LAYER3":
+                relating_type_id and tool.Model.get_usage_type(tool.Ifc.get().by_id(int(relating_type_id))) == "LAYER3"
+            ):
                 bpy.ops.bim.draw_polyline_slab("INVOKE_DEFAULT")
             else:
                 bpy.ops.bim.add_occurrence("INVOKE_DEFAULT")
@@ -1081,6 +1103,8 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
             return
         if self.active_material_usage == "LAYER2":
             bpy.ops.bim.recalculate_wall()
+        elif self.active_material_usage == "LAYER3":
+            bpy.ops.bim.recalculate_slab()
         elif tool.System.get_ports(element):
             bpy.ops.bim.regenerate_distribution_element()
         elif self.active_material_usage == "PROFILE":
@@ -1190,7 +1214,7 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
         bpy.ops.bim.unjoin_walls()
 
     def hotkey_A_D(self):
-        if not bpy.context.selected_objects:
+        if not tool.Blender.get_selected_objects():
             return
         bpy.ops.bim.select_decomposition()
 

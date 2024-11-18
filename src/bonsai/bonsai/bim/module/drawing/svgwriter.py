@@ -25,6 +25,7 @@ import shutil
 import mathutils
 import xml.etree.ElementTree as ET
 import svgwrite
+import svgwrite.text
 import ifcopenshell
 import ifcopenshell.util.element
 import ifcopenshell.util.representation
@@ -774,7 +775,9 @@ class SvgWriter:
             "text-anchor": text_anchor,
         }
 
-    def add_fill_bg(self, element, copy=True):
+    def add_fill_bg(self, element: svgwrite.text.Text, copy: bool = True) -> svgwrite.text.Text:
+        # Useful since tspans and texts do not support "background-color"
+        # so we just add a filter. Have to do it in a separate tag to avoid blurry image.
         if copy:
             element = element.copy()
         if hasattr(element, "xml"):
@@ -838,6 +841,7 @@ class SvgWriter:
                 self.draw_symbol(symbol, symbol_transform)
 
         line_number = 0
+        newline_at = text_obj.BIMTextProperties.newline_at
         for text_literal in text_literals:
             text = tool.Drawing.replace_text_literal_variables(text_literal.Literal, product or element)
             text_tags = self.create_text_tag(
@@ -848,6 +852,7 @@ class SvgWriter:
                 classes_str,
                 fill_bg=fill_bg,
                 line_number_start=line_number,
+                newline_at = newline_at,
             )
             for tag in text_tags:
                 self.svg.add(tag)
@@ -1370,6 +1375,7 @@ class SvgWriter:
         multiline_to_bottom=True,
         fill_bg=False,
         line_number_start=0,
+        newline_at=0,
     ):
         """returns list of created text tags"""
         text_tags = []
@@ -1399,6 +1405,8 @@ class SvgWriter:
 
         text_tag = self.svg.text("", **text_kwargs, **base_text_attrs)
         text_tags.append(text_tag)
+        if newline_at != 0:
+            text = helper.add_newline_between_words (text, newline_at)
         text_lines = text.replace("\\n", "\n").split("\n")
         text_lines = text_lines if multiline_to_bottom else text_lines[::-1]
 

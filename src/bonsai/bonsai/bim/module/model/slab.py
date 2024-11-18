@@ -34,6 +34,7 @@ from mathutils import Vector, Matrix
 from bonsai.bim.module.geometry.helper import Helper
 from bonsai.bim.module.model.decorator import ProfileDecorator, PolylineDecorator, ProductDecorator
 from bonsai.bim.module.model.polyline import PolylineOperator
+from bonsai.bim.module.model.wall import DumbWallRecalculator
 from typing import Optional
 
 
@@ -84,7 +85,7 @@ class DumbSlabGenerator:
         polyline_data = bpy.context.scene.BIMPolylineProperties.insertion_polyline
         polyline_points = polyline_data[0].polyline_points if polyline_data else []
         self.location = Vector((polyline_points[0].x, polyline_points[0].y, self.container_obj.location.z))
-        self.polyline = [Vector((p.x, p.y, 0.0)) - self.location for p in polyline_points]
+        self.polyline = [tuple(Vector((p.x, p.y, 0.0)) - self.location) for p in polyline_points]
 
         if len(self.polyline) <= 2:
             return
@@ -821,3 +822,25 @@ class DrawPolylineSlab(bpy.types.Operator, PolylineOperator):
         self.tool_state.use_default_container = True
         self.tool_state.plane_method = "XY"
         return {"RUNNING_MODAL"}
+
+
+class RecalculateSlab(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.recalculate_slab"
+    bl_label = "Recalculate Slab"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.selected_objects
+
+    def _execute(self, context):
+        walls = []
+        for obj in context.selected_objects:
+            element = tool.Ifc.get_entity(obj)
+            if element.is_a("IfcSlab"):
+                for rel in element.ConnectedTo:
+                    if rel.is_a() == "IfcRelConnectsElements" and rel.RelatedElement.is_a("IfcWall"):
+                        walls.append(tool.Ifc.get_object(rel.RelatedElement))
+
+        DumbWallRecalculator().recalculate(walls)
+        return {"FINISHED"}

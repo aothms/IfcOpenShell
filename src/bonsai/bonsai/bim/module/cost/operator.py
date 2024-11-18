@@ -403,7 +403,7 @@ class AddCostValue(bpy.types.Operator, tool.Ifc.Operator):
 
 class RemoveCostItemValue(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.remove_cost_value"
-    bl_label = "Add Cost Item Value"
+    bl_label = "Remove Cost Item Value"
     bl_options = {"REGISTER", "UNDO"}
     parent: bpy.props.IntProperty()
     cost_value: bpy.props.IntProperty()
@@ -659,6 +659,7 @@ class ContractCostItemRate(bpy.types.Operator, tool.Ifc.Operator):
 class CalculateCostItemResourceValue(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.calculate_cost_item_resource_value"
     bl_label = "Calculate Cost Item Resource Value"
+    bl_description = "Calculate cost item value based on it's resources. Any previous cost values are removed"
     bl_options = {"REGISTER", "UNDO"}
     cost_item: bpy.props.IntProperty()
 

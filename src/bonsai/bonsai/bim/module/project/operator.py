@@ -763,8 +763,9 @@ class LoadProject(bpy.types.Operator, IFCFileSelector):
 
     def finish_loading_project(self, context):
         try:
+            filepath = self.get_filepath()
             if not self.is_existing_ifc_file():
-                self.report({"ERROR"}, f"Couldn't find IFC file: '{self.get_filepath()}'.")
+                self.report({"ERROR"}, f"Couldn't find IFC file: '{filepath}'.")
                 return {"FINISHED"}
 
             if self.should_start_fresh_session and tool.Blender.is_default_scene():
@@ -775,7 +776,13 @@ class LoadProject(bpy.types.Operator, IFCFileSelector):
             if not self.is_advanced and not self.should_start_fresh_session:
                 bpy.ops.bim.convert_to_blender()
 
-            context.scene.BIMProperties.ifc_file = self.get_filepath()
+            context.scene.BIMProperties.ifc_file = filepath
+            if not (ifc_file := tool.Ifc.get()):
+                self.report(
+                    {"ERROR"},
+                    f"Error loading IFC file from filepath '{filepath}'. See logs above in the system console for the details.",
+                )
+                return {"CANCELLED"}
             context.scene.BIMProjectProperties.is_loading = True
             context.scene.BIMProjectProperties.total_elements = len(tool.Ifc.get().by_type("IfcElement"))
             context.scene.BIMProjectProperties.use_relative_project_path = self.use_relative_path
@@ -2485,3 +2492,19 @@ class MeasureTool(bpy.types.Operator, PolylineOperator):
     def invoke(self, context, event):
         super().invoke(context, event)
         return {"RUNNING_MODAL"}
+
+
+class ClearMeasurement(bpy.types.Operator):
+    bl_idname = "bim.clear_measurement"
+    bl_label = "Clear measurement from the screen"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.BIMPolylineProperties.measurement_polyline) > 0
+
+    def execute(self, context):
+        context.scene.BIMPolylineProperties.measurement_polyline.clear()
+        MeasureDecorator.uninstall()
+        tool.Blender.update_viewport()
+        return {"FINISHED"}

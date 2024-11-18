@@ -43,6 +43,7 @@ import bonsai.core.spatial
 import bonsai.core.style
 import bonsai.core.system
 import bonsai.tool as tool
+import bonsai.bim.helper
 import bonsai.bim.import_ifc
 from collections import defaultdict
 from math import radians, pi
@@ -746,7 +747,10 @@ class Geometry(bonsai.core.tool.Geometry):
                         meshes[mesh_name] = mesh
 
                     old_mesh = obj.data
-                    cls.change_object_data(obj, mesh, is_global=False)
+                    if type(old_mesh) == type(mesh):
+                        cls.change_object_data(obj, mesh, is_global=False)
+                    else:
+                        obj = cls.recreate_object_with_data(obj, mesh, is_global=False)
                     cls.record_object_materials(obj)
                     if not cls.has_data_users(old_mesh):
                         cls.delete_data(old_mesh)
@@ -777,7 +781,10 @@ class Geometry(bonsai.core.tool.Geometry):
                         meshes[mesh_name] = mesh
 
                     old_mesh = obj.data
-                    cls.change_object_data(obj, mesh, is_global=False)
+                    if type(old_mesh) == type(mesh):
+                        cls.change_object_data(obj, mesh, is_global=False)
+                    else:
+                        obj = cls.recreate_object_with_data(obj, mesh, is_global=False)
                     cls.record_object_materials(obj)
                     if not cls.has_data_users(old_mesh):
                         cls.delete_data(old_mesh)
@@ -1539,12 +1546,25 @@ class Geometry(bonsai.core.tool.Geometry):
         props = obj.data.BIMMeshProperties
         props.item_attributes.clear()
         item = tool.Ifc.get().by_id(props.ifc_definition_id)
-        if item.is_a("IfcExtrudedAreaSolid"):
-            new: Attribute = props.item_attributes.add()
-            new.name = "Depth"
-            new.data_type = "float"
-            new.special_type = "LENGTH"
-            new.float_value = item.Depth
+        allowed_attributes = [
+            a.name()
+            for a in item.wrapped_data.declaration().as_entity().all_attributes()
+            if a.type_of_attribute()._is("IfcLengthMeasure")
+        ]
+
+        def callback(attr_name: str, *_) -> Union[None, Literal[False]]:
+            if attr_name not in allowed_attributes:
+                return False
+            return None
+
+        bonsai.bim.helper.import_attributes2(item, props.item_attributes, callback=callback)
+
+    @classmethod
+    def update_item_attributes(cls, obj: bpy.types.Object) -> None:
+        props = obj.data.BIMMeshProperties
+        item = tool.Ifc.get().by_id(props.ifc_definition_id)
+        for attribute in props.item_attributes:
+            setattr(item, attribute.name, attribute.get_value())
 
     @classmethod
     def import_item(cls, obj: bpy.types.Object) -> None:

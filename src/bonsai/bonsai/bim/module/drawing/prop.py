@@ -290,6 +290,7 @@ class Sheet(PropertyGroup):
     identification: StringProperty(name="Identification")
     name: StringProperty(name="Name")
     is_sheet: BoolProperty(name="Is Sheet", default=False)
+    is_selected: BoolProperty(name="Is Selected", default=True)
     reference_type: StringProperty(name="Reference Type")
     is_expanded: BoolProperty(name="Is Expanded", default=False)
 
@@ -521,6 +522,7 @@ class BIMTextProperties(PropertyGroup):
         default="2.5",
         name="Font Size",
     )
+    newline_at: IntProperty(name="Newline At")
 
     def get_text_edited_data(self):
         """should be called only if `is_editing`

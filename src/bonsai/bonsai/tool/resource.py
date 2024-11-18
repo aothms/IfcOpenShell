@@ -97,6 +97,7 @@ class Resource(bonsai.core.tool.Resource):
         props.active_resource_id = resource.id()
         props.resource_attributes.clear()
         props.editing_resource_type = "ATTRIBUTES"
+        cls.update_cost_values_ui_data()
 
     @classmethod
     def get_resource_attributes(cls) -> dict[str, Any]:
@@ -109,6 +110,7 @@ class Resource(bonsai.core.tool.Resource):
         props.active_resource_time_id = resource.Usage.id()
         props.active_resource_id = resource.id()
         props.editing_resource_type = "USAGE"
+        cls.update_cost_values_ui_data()
 
     @classmethod
     def get_resource_time(cls, resource: ifcopenshell.entity_instance) -> Union[ifcopenshell.entity_instance, None]:
@@ -153,6 +155,7 @@ class Resource(bonsai.core.tool.Resource):
         props = bpy.context.scene.BIMResourceProperties
         props.active_resource_id = resource.id()
         props.editing_resource_type = "COSTS"
+        cls.update_cost_values_ui_data()
 
     @classmethod
     def disable_editing_resource_cost_value(cls) -> None:
@@ -263,6 +266,7 @@ class Resource(bonsai.core.tool.Resource):
         props.active_resource_id = resource.id()
         props.editing_resource_type = "QUANTITY"
         props.active_resource_class = resource.is_a()
+        cls.update_cost_values_ui_data()
 
     @classmethod
     def enable_editing_resource_quantity(cls, resource_quantity: ifcopenshell.entity_instance) -> None:
@@ -300,9 +304,7 @@ class Resource(bonsai.core.tool.Resource):
         from ifc4d.csv2ifc import Csv2Ifc
 
         start = time.time()
-        p62ifc = Csv2Ifc()
-        p62ifc.csv = file_path
-        p62ifc.file = tool.Ifc.get()
+        p62ifc = Csv2Ifc(file_path, tool.Ifc.get())
         p62ifc.execute()
         print("Importing Resources CSV finished in {:.2f} seconds".format(time.time() - start))
 
@@ -440,6 +442,12 @@ class Resource(bonsai.core.tool.Resource):
         tool.Ifc.run("resource.calculate_resource_usage", resource=resource)
 
     @classmethod
+    def calculate_resource_quantity(cls, resource: ifcopenshell.entity_instance) -> None:
+        quantity: ifcopenshell.entity_instance = resource.BaseQuantity
+        quantity_from_products = ifcopenshell.util.resource.get_total_quantity_produced(resource, quantity.Name)
+        quantity[3] = quantity_from_products
+
+    @classmethod
     def get_task_assignments(cls, resource: ifcopenshell.entity_instance) -> Union[ifcopenshell.entity_instance, None]:
         return ifcopenshell.util.resource.get_task_assignments(resource)
 
@@ -450,3 +458,11 @@ class Resource(bonsai.core.tool.Resource):
     @classmethod
     def is_attribute_locked(cls, resource: ifcopenshell.entity_instance, attribute) -> bool:
         return ifcopenshell.util.constraint.is_attribute_locked(resource, attribute)
+
+    @classmethod
+    def update_cost_values_ui_data(cls) -> None:
+        from bonsai.bim.module.resource.data import ResourceData
+
+        if not ResourceData.is_loaded:
+            return
+        ResourceData.data["cost_values"] = ResourceData.cost_values()

@@ -25,6 +25,7 @@ import collections.abc
 import numpy as np
 import ifcopenshell
 import ifcopenshell.api
+import ifcopenshell.api.pset
 import ifcopenshell.util.element
 import ifcopenshell.util.unit
 import ifcopenshell.util.placement
@@ -669,19 +670,23 @@ class Model(bonsai.core.tool.Model):
             if not array_pset:
                 return
 
-            array_pset_data = array_pset["Data"]
+            # TODO: Non-strictness is temporary. It was added due
+            # to a bug infecting ifc models since it occurred,
+            # can be reverted later.
+            array_pset_data = array_pset.get("Data", None)
             array_pset = tool.Ifc.get().by_id(array_pset["id"])
             ifcopenshell.api.run("pset.remove_pset", tool.Ifc.get(), product=element, pset=array_pset)
 
             # remove constraints
             obj = tool.Ifc.get_object(element)
+            assert isinstance(obj, bpy.types.Object)
             if not array_pset_data:  # skip array parents
                 constraint = next((c for c in obj.constraints if c.type == "CHILD_OF"), None)
                 if constraint:
                     matrix = obj.matrix_world.copy()
                     obj.constraints.remove(constraint)
-                    # keep the matrix before the constraint
-                    # otherwise object will jump to some previous position
+                    # Keep the matrix before removing the constraint,
+                    # otherwise object will jump to some previous position.
                     obj.matrix_world = matrix
                 tool.Blender.lock_transform(obj, False)
 
@@ -763,11 +768,11 @@ class Model(bonsai.core.tool.Model):
                     # add child pset
                     child_pset = tool.Pset.get_element_pset(child_element, "BBIM_Array")
                     if child_pset:
-                        ifcopenshell.api.run(
-                            "pset.edit_pset",
+                        ifcopenshell.api.pset.edit_pset(
                             tool.Ifc.get(),
                             pset=child_pset,
                             properties={"Data": None},
+                            should_purge=False,
                         )
 
                     # set child object position

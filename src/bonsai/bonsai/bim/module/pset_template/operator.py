@@ -82,7 +82,7 @@ class RemovePsetTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOpera
         ifcopenshell.api.run(
             "pset_template.remove_pset_template",
             self.template_file,
-            **{"pset_template": self.template_file.by_id(current_pset_template_id)}
+            **{"pset_template": self.template_file.by_id(current_pset_template_id)},
         )
         self.template_file.write(IfcStore.pset_template_path)
         bonsai.bim.handler.refresh_ui_data()
@@ -104,6 +104,8 @@ class EnableEditingPsetTemplate(bpy.types.Operator):
         props.active_pset_template.description = template.Description or ""
         props.active_pset_template.template_type = template.TemplateType
         props.active_pset_template.applicable_entity = template.ApplicableEntity or ""
+        # Disable because of the intersecting enums in data.py.
+        props.active_prop_template_id = 0
         return {"FINISHED"}
 
 
@@ -130,7 +132,7 @@ class EnableEditingPropTemplate(bpy.types.Operator):
         template = IfcStore.pset_template_file.by_id(props.active_prop_template_id)
         props.active_prop_template.name = template.Name or ""
         props.active_prop_template.description = template.Description or ""
-        props.active_prop_template.primary_measure_type = template.PrimaryMeasureType
+        props.active_prop_template.primary_measure_type = template.PrimaryMeasureType or "-"
         props.active_prop_template.template_type = template.TemplateType
         props.active_prop_template.enum_values.clear()
 
@@ -140,6 +142,9 @@ class EnableEditingPropTemplate(bpy.types.Operator):
             for e in template.Enumerators.EnumerationValues:
                 new = props.active_prop_template.enum_values.add()
                 setattr(new, data_type, e.wrappedValue)
+
+        # Disable because of the intersecting enums in data.py.
+        props.active_pset_template_id = 0
         return {"FINISHED"}
 
 
@@ -196,7 +201,7 @@ class EditPsetTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOperato
                     "TemplateType": props.active_pset_template.template_type,
                     "ApplicableEntity": props.active_pset_template.applicable_entity,
                 },
-            }
+            },
         )
         bpy.ops.bim.disable_editing_pset_template()
         IfcStore.pset_template_file.write(IfcStore.pset_template_path)
@@ -269,7 +274,7 @@ class RemovePropTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOpera
         ifcopenshell.api.run(
             "pset_template.remove_prop_template",
             IfcStore.pset_template_file,
-            **{"prop_template": IfcStore.pset_template_file.by_id(self.prop_template)}
+            **{"prop_template": IfcStore.pset_template_file.by_id(self.prop_template)},
         )
         IfcStore.pset_template_file.write(IfcStore.pset_template_path)
         bonsai.bim.handler.refresh_ui_data()
@@ -282,13 +287,18 @@ class EditPropTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOperato
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
+        assert IfcStore.pset_template_file
         props = context.scene.BIMPsetTemplateProperties
+        active_prop_template = props.active_prop_template
         if props.active_prop_template.template_type == "P_ENUMERATEDVALUE":
             data_type = props.active_prop_template.get_value_name()
             prop = props.active_prop_template
             enumerators = [getattr(ev, data_type) for ev in prop.enum_values]
         else:
             enumerators = None
+        if (primary_measure_type := active_prop_template.primary_measure_type) == "-":
+            primary_measure_type = None
+
         ifcopenshell.api.run(
             "pset_template.edit_prop_template",
             IfcStore.pset_template_file,
@@ -296,7 +306,7 @@ class EditPropTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOperato
             attributes={
                 "Name": props.active_prop_template.name,
                 "Description": props.active_prop_template.description,
-                "PrimaryMeasureType": props.active_prop_template.primary_measure_type,
+                "PrimaryMeasureType": primary_measure_type,
                 "TemplateType": props.active_prop_template.template_type,
                 "Enumerators": enumerators,
             },

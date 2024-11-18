@@ -42,7 +42,7 @@ from mathutils import Vector, Matrix
 from time import time
 from bonsai.bim.ifc import IfcStore
 from ifcopenshell.util.shape_builder import ShapeBuilder
-from typing import Any, Union
+from typing import Any, Union, Literal, get_args, TYPE_CHECKING, assert_never
 from bonsai.bim.module.model.decorator import ProfileDecorator
 
 
@@ -1070,11 +1070,20 @@ class OverrideDuplicateMove(bpy.types.Operator):
         tool.Root.reload_item_decorator()
 
     @staticmethod
-    def process_arrays(self, context):
+    def process_arrays(
+        self, context: bpy.types.Context
+    ) -> tuple[dict[bpy.types.Object, Any], set[ifcopenshell.entity_instance]]:
+        """ "Process arrays for currently selected objects.
+
+        :return: A tuple of two elements:\n
+            - dictionary of objects and their array data. Those objects are safe to duplicate and regenerate arrays using the data.\n
+            - set of array children objects. Those objects can be ignored during duplication, they will be recreated automatically
+            when arrays are regenerated for objects from the dictionary.
+        """
         selected_objects = set(context.selected_objects)
         array_parents = set()
-        arrays_to_create = dict()
-        array_children = set()  # will be ignored during the duplication
+        arrays_to_create: dict[bpy.types.Object, Any] = dict()
+        array_children: set[ifcopenshell.entity_instance] = set()  # will be ignored during the duplication
 
         for obj in context.selected_objects:
             element = tool.Ifc.get_entity(obj)
@@ -1109,7 +1118,7 @@ class OverrideDuplicateMove(bpy.types.Operator):
         single_obj = False
         if len(old_to_new) == 1:
             single_obj = True
-            
+
         for new in old_to_new.values():
             if not hasattr(new[0], "ConnectedTo"):
                 continue
@@ -2582,13 +2591,10 @@ class UpdateItemAttributes(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         obj = context.active_object
-        props = obj.data.BIMMeshProperties
-        item = tool.Ifc.get().by_id(props.ifc_definition_id)
-        for attribute in props.item_attributes:
-            if attribute.name == "Depth":
-                item.Depth = attribute.float_value
+        tool.Geometry.update_item_attributes(obj)
         tool.Geometry.reload_representation(bpy.context.scene.BIMGeometryProperties.representation_obj)
         tool.Geometry.import_item(obj)
+        tool.Root.reload_item_decorator()
 
 
 class AddMeshlikeItem(bpy.types.Operator, tool.Ifc.Operator):
@@ -2712,7 +2718,12 @@ class AddCurvelikeItem(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.add_curvelike_item"
     bl_label = "Add Curvelike Item"
     bl_options = {"REGISTER", "UNDO"}
-    shape: bpy.props.StringProperty(name="Shape")
+    CurveShape = Literal["LINE", "CIRCLE", "ELLIPSE"]
+
+    shape: bpy.props.EnumProperty(name="Shape", items=[(i, i, i) for i in get_args(CurveShape)])
+
+    if TYPE_CHECKING:
+        shape: CurveShape
 
     def _execute(self, context):
         props = context.scene.BIMGeometryProperties
@@ -2739,8 +2750,9 @@ class AddCurvelikeItem(bpy.types.Operator, tool.Ifc.Operator):
         obj.matrix_world = matrix
         tool.Geometry.record_object_position(obj)
 
-        builder = ifcopenshell.util.shape_builder.ShapeBuilder(tool.Ifc.get())
-        unit_scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+        ifc_file = tool.Ifc.get()
+        builder = ifcopenshell.util.shape_builder.ShapeBuilder(ifc_file)
+        unit_scale = ifcopenshell.util.unit.calculate_unit_scale(ifc_file)
 
         offset = local_matrix.translation.to_2d() / unit_scale
         if not is_2d:
@@ -2754,6 +2766,15 @@ class AddCurvelikeItem(bpy.types.Operator, tool.Ifc.Operator):
             item = builder.polyline(points=points, position_offset=offset)
         elif self.shape == "CIRCLE":
             item = builder.circle(radius=0.25 / unit_scale, center=offset)
+        elif self.shape == "ELLIPSE":
+            item = ifc_file.create_entity(
+                "IfcEllipse",
+                Position=builder.create_axis2_placement_2d(),
+                SemiAxis1=0.25 / unit_scale,
+                SemiAxis2=0.125 / unit_scale,
+            )
+        else:
+            assert_never(self.shape)
 
         representation.Items = list(representation.Items) + [item]
         tool.Geometry.reload_representation(bpy.context.scene.BIMGeometryProperties.representation_obj)

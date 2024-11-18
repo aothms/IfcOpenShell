@@ -54,13 +54,19 @@ cwd = os.path.dirname(os.path.realpath(__file__))
 
 
 def update_tab(self: "BIMAreaProperties", context: bpy.types.Context) -> None:
+    # Some tabs are intended only for loaded IFC project.
+    if self.tab not in ("PROJECT", "FM", "QUALITY", "BLENDER") and not tool.Ifc.get():
+        enum_items = [i[0] for i in get_tab.enum_items if i]
+        tool.Blender.show_info_message(f"Tab '{self.tab}' only available with loaded IFC project.", "ERROR")
+        self["tab"] = enum_items.index(self.previous_tab)
+        return
     self.alt_tab = self.previous_tab
     self.previous_tab = self.tab
 
 
 def update_global_tab(self: "BIMTabProperties", context: bpy.types.Context) -> None:
     tool.Blender.setup_tabs()
-    screen = tool.Blender.get_screen(context)
+    screen = context.id_data
     aprops = screen.BIMAreaProperties[screen.areas[:].index(context.area)]
     aprops.tab = self.tab
 
@@ -170,22 +176,32 @@ class MultipleFileSelect(PropertyGroup):
     single_file: bpy.props.StringProperty(name="Single File Path", description="", update=update_single_file)
     file_list: bpy.props.CollectionProperty(type=StrProperty)
 
-    def set_file_list(self, dirname: str, files: list[str]):
+    def set_file_list(self, dirname: str, files: list[str]) -> None:
         self.file_list.clear()
 
         for f in files:
             new = self.file_list.add()
             new.name = os.path.join(dirname, f)
 
-    def layout_file_select(self, layout, filter_glob="", text=""):
-        if len(self.file_list) > 1:
-            layout.label(text=f"{len(self.file_list)} Files Selected")
+    def layout_file_select(self, layout: bpy.types.UILayout, filter_glob: str = "", text: str = "") -> None:
+        # NOTE: current multifile selector design doesn't allow selecting files from different folders.
+        column = layout.column(align=True)
+        multiple_files = len(self.file_list) > 1
+        row = column.row(align=True)
+        if multiple_files:
+            row.label(text=f"{len(self.file_list)} Files Selected")
         else:
-            layout.prop(self, "single_file", text=text)
+            row.prop(self, "single_file", text=text)
 
-        layout.context_pointer_set("file_props", self)
-        op = layout.operator("bim.multiple_file_selector", icon="FILE_FOLDER", text="")
+        row.context_pointer_set("file_props", self)
+        op = row.operator("bim.multiple_file_selector", icon="FILE_FOLDER", text="")
         op.filter_glob = filter_glob
+
+        if not multiple_files:
+            return
+
+        for file in self.file_list:
+            column.prop(file, "name", text="")
 
 
 def update_attribute_value(self: "Attribute", context: bpy.types.Context) -> None:
@@ -400,10 +416,9 @@ class BIMAreaProperties(PropertyGroup):
 # BIMAreaProperties exists per area and is setup on load post. However, for new
 # or temporary screens, they may not be setup yet, so this global tab
 # properties is used as a fallback.
+# Need it basically only for UI - to display those props and allow changing tab from the dropdown.
 class BIMTabProperties(PropertyGroup):
     tab: EnumProperty(default=0, items=get_tab, name="Tab", update=update_global_tab)
-    previous_tab: StringProperty(default="PROJECT", name="Previous Tab")
-    alt_tab: StringProperty(default="OBJECT", name="Alt Tab")
     active_tab: BoolProperty(default=True, name="Active Tab")
     inactive_tab: BoolProperty(default=False, name="Inactive Tab")
 
