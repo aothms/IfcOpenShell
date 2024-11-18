@@ -1,0 +1,134 @@
+name: Build IfcOpenShell Windows
+
+on:
+  push:
+    branches:
+      - v0.8.0
+  workflow_dispatch:
+
+jobs:
+  build_ifcopenshell:
+    runs-on: windows-2019
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9.13', '3.10.10', '3.11.8', '3.12.1', '3.13.0']
+        arch: ['x64']
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Checkout Build Repository
+        uses: actions/checkout@v3
+        with:
+          repository: aothms/build-outputs
+          path: _deps-vs2022-x64-installed
+          ref: windows-${{ matrix.arch }}
+          lfs: true
+          token: ${{ secrets.BUILD_REPO_TOKEN }}
+
+      - name: Install Dependencies
+        run: |
+          choco install -y sed 7zip.install
+
+      - name: Install Python
+        run: |
+          $installer = "python-${{ matrix.python }}-amd64.exe"
+          $url = "https://www.python.org/ftp/python/${{ matrix.python }}/$installer"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -Wait -FilePath .\$installer -ArgumentList '/quiet InstallAllUsers=0 PrependPath=0 Include_test=0 TargetDir=C:\Python\${{ matrix.python }}'
+          Remove-Item .\$installer
+
+      - name: Unpack Dependencies
+        run: |
+          $installRoot = 'win\_deps-vs2022-x64-installed'
+          Get-ChildItem -Path $installRoot.FullName -Filter 'cache-*.tar.gz' | ForEach-Object {
+            7za x -o $installRoot.FullName $_.FullName
+          }
+
+      - name: Run Build Script for Each Python Version
+        shell: cmd
+        run: |
+          setlocal EnableDelayedExpansion
+          SET PYTHON_VERSION=${{ matrix.python }}
+          for /f "tokens=1,2,3 delims=." %%a in ("%PYTHON_VERSION%") do ( 
+              set PY_VER_MAJOR_MINOR=%%a%%b
+          )
+          CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+          SET IFCOS_INSTALL_PYTHON=FALSE
+          cd win
+          echo y | call build-deps.cmd vs2019-x64 Release
+          SET PYTHONHOME=C:\Python\${{ matrix.python }}
+          call run-cmake.bat vs2019-x64 -DENABLE_BUILD_OPTIMIZATIONS=On -DGLTF_SUPPORT=ON -DADD_COMMIT_SHA=ON -DVERSION_OVERRIDE=ON
+          call install-ifcopenshell.bat vs2019-x64 Release
+
+      - name: Pack Dependencies
+        run: |
+          cd build
+          Get-ChildItem -Path . -Recurse -Filter install | ForEach-Object {
+            $cacheFile = Join-Path $_.Parent.FullName "cache-$($_.Name).tar.gz"
+            if (!(Test-Path $cacheFile)) {
+              tar -czf $cacheFile -C $_.Parent.FullName $_.Name
+            }
+          }
+
+      - name: Commit and Push Changes to Build Repository
+        run: |
+          cd build
+          git config user.name "IfcOpenBot"
+          git config user.email "ifcopenbot@ifcopenshell.org"
+          git add **\*.tar.gz
+          git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
+          git push || echo "Push failed"
+
+      - name: Package .zip Archives
+        run: |
+          $VERSION = Get-Content VERSION
+          $OUTPUT_DIR = "$env:USERPROFILE\output"
+          New-Item -ItemType Directory -Force -Path $OUTPUT_DIR
+          $INSTALL_DIR = "$env:GITHUB_WORKSPACE\build\Windows\vs2019\x64\Release\install\ifcopenshell"
+          cd $INSTALL_DIR
+
+          $PYTHON_VERSIONS = @('3.9.13', '3.10.10', '3.11.8', '3.12.1', '3.13.0')
+          foreach ($version in $PYTHON_VERSIONS) {
+            $pyVersionMajor = "python-" + $version.Replace('.', '')
+            $pyDir = "$INSTALL_DIR\python-$version"
+            if (Test-Path $pyDir) {
+              cd $pyDir
+              if (!(Test-Path ifcopenshell)) {
+                mkdir ifcopenshell
+                Get-ChildItem -Exclude ifcopenshell | Move-Item -Destination ifcopenshell
+              }
+              Remove-Item -Recurse -Force ifcopenshell\__pycache__
+              Get-ChildItem -Path ifcopenshell -Filter "*.pyc" -Recurse | Remove-Item -Force
+              $zipName = "ifcopenshell-$pyVersionMajor-$VERSION-${{ github.sha }}-windows64.zip"
+              Compress-Archive -Path ifcopenshell\* -DestinationPath $zipName
+              Move-Item $zipName $OUTPUT_DIR
+              cd ..
+            }
+          }
+
+          # Package binaries
+          $BIN_DIR = "$INSTALL_DIR\bin"
+          if (Test-Path $BIN_DIR) {
+            cd $BIN_DIR
+            Get-ChildItem -File | ForEach-Object {
+              $exe = $_.Name
+              $zipName = "$exe-$VERSION-${{ github.sha }}-windows64.zip"
+              Compress-Archive -Path $exe -DestinationPath $zipName
+              Move-Item $zipName $OUTPUT_DIR
+            }
+          }
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_UPLOAD_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_UPLOAD_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload .zip Archives to S3
+        run: |
+          aws s3 cp $env:USERPROFILE\output s3://ifcopenshell-builds/ --recursive
