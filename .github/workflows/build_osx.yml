@@ -83,7 +83,7 @@ jobs:
 
       - name: Package .zip archives
         run: |
-          VERSION=`cat VERSION`
+          VERSION=v`cat VERSION`
           cd ./build/`uname`/*/10.9/install/ifcopenshell
           mkdir ~/output
 
@@ -119,6 +119,11 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_UPLOAD_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_UPLOAD_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
+      - name: Overwrite aws cli
+        run: |
+          # https://github.com/rust-lang/rustup/pull/3989/files
+          brew install --overwrite awscli
 
       - name: Upload .zip archives to S3
         run: |

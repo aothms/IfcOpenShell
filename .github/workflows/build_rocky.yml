@@ -67,7 +67,7 @@ jobs:
 
       - name: Package .zip archives
         run: |
-          VERSION=`cat VERSION`
+          VERSION=v`cat VERSION`
           cd ./build/`uname`/*/install/ifcopenshell
           mkdir ~/output
 
