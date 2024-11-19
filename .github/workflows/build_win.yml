@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: aothms/build-outputs
-          path: _deps-vs2022-x64-installed
+          path: _deps-vs2019-x64-installed
           ref: windows-${{ matrix.arch }}
           lfs: true
           token: ${{ secrets.BUILD_REPO_TOKEN }}
@@ -43,7 +43,7 @@ jobs:
 
       - name: Unpack Dependencies
         run: |
-          cd _deps-vs2022-x64-installed
+          cd _deps-vs2019-x64-installed
           Get-ChildItem -Path . -Filter 'cache-*.zip' | ForEach-Object {
             7z x $_.FullName
           }
@@ -66,9 +66,10 @@ jobs:
 
       - name: Pack Dependencies
         run: |
-          cd _deps-vs2022-x64-installed
+          cd _deps-vs2019-x64-installed
           Get-ChildItem -Path . -Directory | ForEach-Object {
             $cacheFile = "cache-$($_.Name).zip"
+            echo $cacheFile
             if (!(Test-Path $cacheFile)) {
               7z a $cacheFile $_.FullName
             }
@@ -76,7 +77,7 @@ jobs:
 
       - name: Commit and Push Changes to Build Repository
         run: |
-          cd _deps-vs2022-x64-installed
+          cd _deps-vs2019-x64-installed
           git config user.name "IfcOpenBot"
           git config user.email "ifcopenbot@ifcopenshell.org"
           git add *.zip
@@ -86,7 +87,9 @@ jobs:
       - name: Package .zip Archives
         run: |
           $VERSION = 'v' + ((Get-Content VERSION).Trim())
-          Get-ChildItem | ForEach-Object {
+          cd _installed-vs2019-x64/bin
+          Get-ChildItem -Path . | ForEach-Object {
+            echo $_
             $exe = $_.Name
             $baseName = $exe.Substring(0, $exe.Length - 4)
             $zipName = "${baseName}-$VERSION-${env:GITHUB_SHA.Substring(0, 7)}-win64.zip"
