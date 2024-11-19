@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          choco install -y sed 7zip.install
+          choco install -y sed 7zip.install awscli
 
       - name: Install Python
         run: |
@@ -43,9 +43,9 @@ jobs:
 
       - name: Unpack Dependencies
         run: |
-          $installRoot = 'win\_deps-vs2022-x64-installed'
-          Get-ChildItem -Path $installRoot.FullName -Filter 'cache-*.tar.gz' | ForEach-Object {
-            7za x -o $installRoot.FullName $_.FullName
+          cd _deps-vs2022-x64-installed
+          Get-ChildItem -Path . -Filter 'cache-*.zip' | ForEach-Object {
+            7z x $_.FullName
           }
 
       - name: Run Build Script
@@ -66,61 +66,44 @@ jobs:
 
       - name: Pack Dependencies
         run: |
-          cd build
-          Get-ChildItem -Path . -Recurse -Filter install | ForEach-Object {
-            $cacheFile = Join-Path $_.Parent.FullName "cache-$($_.Name).tar.gz"
+          cd _deps-vs2022-x64-installed
+          Get-ChildItem -Path . -Directory | ForEach-Object {
+            $cacheFile = "cache-$($_.Name).zip"
             if (!(Test-Path $cacheFile)) {
-              tar -czf $cacheFile -C $_.Parent.FullName $_.Name
+              7z a $cacheFile $_.FullName
             }
           }
 
       - name: Commit and Push Changes to Build Repository
         run: |
-          cd build
+          cd _deps-vs2022-x64-installed
           git config user.name "IfcOpenBot"
           git config user.email "ifcopenbot@ifcopenshell.org"
-          git add **\*.tar.gz
+          git add *.zip
           git commit -m "Update build artifacts [skip ci]" || echo "No changes to commit"
           git push || echo "Push failed"
 
       - name: Package .zip Archives
         run: |
           $VERSION = 'v' + ((Get-Content VERSION).Trim())
+          Get-ChildItem | ForEach-Object {
+            $exe = $_.Name
+            $baseName = $exe.Substring(0, $exe.Length - 4)
+            $zipName = "${baseName}-$VERSION-${env:GITHUB_SHA.Substring(0, 7)}-win64.zip"
+            7z a $zipName $exe
+          }
           $OUTPUT_DIR = "$env:USERPROFILE\output"
           New-Item -ItemType Directory -Force -Path $OUTPUT_DIR
-          $INSTALL_DIR = "$env:GITHUB_WORKSPACE\build\Windows\vs2019\x64\Release\install\ifcopenshell"
-          cd $INSTALL_DIR
+          mv *.zip $OUTPUT_DIR
 
-          $PYTHON_VERSIONS = @('3.9.13', '3.10.10', '3.11.8', '3.12.1', '3.13.0')
-          foreach ($version in $PYTHON_VERSIONS) {
-            $pyVersionMajor = "python-" + $version.Replace('.', '')
-            $pyDir = "$INSTALL_DIR\python-$version"
-            if (Test-Path $pyDir) {
-              cd $pyDir
-              if (!(Test-Path ifcopenshell)) {
-                mkdir ifcopenshell
-                Get-ChildItem -Exclude ifcopenshell | Move-Item -Destination ifcopenshell
-              }
-              Remove-Item -Recurse -Force ifcopenshell\__pycache__
-              Get-ChildItem -Path ifcopenshell -Filter "*.pyc" -Recurse | Remove-Item -Force
-              $zipName = "ifcopenshell-$pyVersionMajor-$VERSION-${{ github.sha }}-windows64.zip"
-              Compress-Archive -Path ifcopenshell\* -DestinationPath $zipName
-              Move-Item $zipName $OUTPUT_DIR
-              cd ..
-            }
-          }
-
-          # Package binaries
-          $BIN_DIR = "$INSTALL_DIR\bin"
-          if (Test-Path $BIN_DIR) {
-            cd $BIN_DIR
-            Get-ChildItem -File | ForEach-Object {
-              $exe = $_.Name
-              $zipName = "$exe-$VERSION-${{ github.sha }}-windows64.zip"
-              Compress-Archive -Path $exe -DestinationPath $zipName
-              Move-Item $zipName $OUTPUT_DIR
-            }
-          }
+          $version = "${{ matrix.python }}"
+          $pyVersionMajor = ($version -split '\.')[0..1] -join '.'
+          cd C:\Python\${{ matrix.python }}\Lib\site-packages
+          Remove-Item -Recurse -Force ifcopenshell\__pycache__
+          Get-ChildItem -Path ifcopenshell -Filter "*.pyc" -Recurse | Remove-Item -Force
+          $zipName = "ifcopenshell-$pyVersionMajor-$VERSION-${env:GITHUB_SHA.Substring(0, 7)}-win64.zip"
+          7z a $zipName ifcopenshell
+          mv $zipName $OUTPUT_DIR
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
