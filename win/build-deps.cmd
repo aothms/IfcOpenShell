@@ -372,16 +372,18 @@ call :DownloadFile https://github.com/nlohmann/json/releases/download/v3.6.1/jso
 
 :OpenCOLLADA
 
-IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
-    echo Found existing "%INSTALL_DIR%\OpenCOLLADA", skipping
-    goto :OCCT
-)
-
 :: Note OpenCOLLADA has only Release and Debug builds.
 set DEPENDENCY_NAME=OpenCOLLADA
 set DEPENDENCY_DIR=%DEPS_DIR%\OpenCOLLADA
 :: Use a fixed revision in order to prevent introducing breaking changes
 call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" 064a60b65c2c31b94f013820856bc84fb1937cc6
+
+IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
+    echo Found existing "%INSTALL_DIR%\OpenCOLLADA", skipping
+    :: we do need to clone though because the bundled libxml includes are not installed
+    goto :OCCT
+)
+
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 cd "%DEPENDENCY_DIR%"
 :: Debug build of OpenCOLLADAValidator fails (https://github.com/KhronosGroup/OpenCOLLADA/issues/377) so
