@@ -92,7 +92,7 @@ jobs:
             echo $_
             $exe = $_.Name
             $baseName = $exe.Substring(0, $exe.Length - 4)
-            $zipName = "${baseName}-$VERSION-${env:GITHUB_SHA.Substring(0, 7)}-win64.zip"
+            $zipName = "${baseName}-$VERSION-${env:GITHUB_SHA}.Substring(0, 7)-win64.zip"
             7z a $zipName $exe
           }
           $OUTPUT_DIR = "$env:USERPROFILE\output"
@@ -104,7 +104,7 @@ jobs:
           cd C:\Python\${{ matrix.python }}\Lib\site-packages
           Remove-Item -Recurse -Force ifcopenshell\__pycache__ -ErrorAction SilentlyContinue
           Get-ChildItem -Path ifcopenshell -Filter "*.pyc" -Recurse | Remove-Item -Force
-          $zipName = "ifcopenshell-$pyVersionMajor-$VERSION-${env:GITHUB_SHA.Substring(0, 7)}-win64.zip"
+          $zipName = "ifcopenshell-$pyVersionMajor-$VERSION-${env:GITHUB_SHA}.Substring(0, 7)-win64.zip"
           7z a $zipName ifcopenshell
           mv $zipName $OUTPUT_DIR
 
